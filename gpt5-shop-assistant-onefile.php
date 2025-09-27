@@ -161,10 +161,26 @@ class GPT5_Shop_Assistant_Onefile {
     }
 
     public function sanitize_settings($opts) {
-        $d = self::default_settings();
-        $res = [];
-        foreach ($d as $k=>$v) {
-            if (isset($opts[$k])) { $res[$k] = $opts[$k]; }
+        if (!is_array($opts)) {
+            $opts = [];
+        }
+        $res = self::default_settings();
+        foreach ($res as $k => $v) {
+            if (isset($opts[$k])) {
+                $res[$k] = $opts[$k];
+            }
+        }
+        $checkboxes = [
+            'privacy_strip_pii',
+            'economy_mode',
+            'enable_streaming',
+            'enable_analytics',
+            'enable_widget',
+            'enable_catalog',
+            'enable_recs',
+        ];
+        foreach ($checkboxes as $key) {
+            $res[$key] = isset($opts[$key]) ? 1 : 0;
         }
         $res['max_tokens'] = max(64, intval($res['max_tokens']));
         $res['temperature'] = min(2.0, max(0.0, floatval($res['temperature'])));

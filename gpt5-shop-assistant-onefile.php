@@ -15,6 +15,7 @@ if (!defined('ABSPATH')) {
 class GPT5_Shop_Assistant_Onefile {
     const OPT_KEY = 'gpt5_sa_settings';
     const NONCE_ACTION = 'gpt5sa_public';
+    const TRANSIENT_SITEMAP = 'gpt5_sa_sitemap_cache';
 
     public function __construct() {
         add_action('plugins_loaded', [$this, 'i18n']);
@@ -218,7 +219,7 @@ sendBtn.addEventListener('click',send);textarea.addEventListener('keydown',e=>{i
 async function loadProducts(q){slider.dataset.loaded='1';slider.innerHTML='<div class=\"gpt5sa-card\">Cargando…</div>';
 try{const url=new URL(cfg.rest+'wc-search');if(q)url.searchParams.set('q',q);const res=await fetch(url.toString(),{headers:{'X-GPT5SA-Nonce':cfg.nonce},credentials:'include'});const data=await res.json();if(!res.ok)throw new Error(data.message||'Error');renderProducts(data.items||[]);}catch(e){slider.innerHTML='<div class=\"gpt5sa-card\">'+escapeHTML(e.message||'Error')+'</div>';}}
 searchBtn.addEventListener('click',()=>loadProducts(searchInput.value.trim()));searchInput.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();loadProducts(searchInput.value.trim());}});
-function renderProducts(items){if(!items.length){slider.innerHTML='<div class=\"gpt5sa-card\">Sin productos</div>';return;}slider.innerHTML='';items.forEach(item=>{const card=document.createElement('div');card.className='gpt5sa-card';card.innerHTML=(item.image?'<img src=\"'+item.image+'\" alt=\"\"/>':'')+'<strong>'+escapeHTML(item.name||'Producto')+'</strong><span class=\"price\">'+escapeHTML(item.price||'')+'</span><div class=\"muted\">'+escapeHTML(item.brand||'')+'</div><div class=\"actions\"><a href=\"'+(item.permalink||'#')+'\" target=\"_blank\" rel=\"noopener\">Ver</a>'+(item.add_to_cart?'':'')+'</div>';
+        function renderProducts(items){if(!items.length){slider.innerHTML='<div class=\"gpt5sa-card\">Sin productos</div>';return;}slider.innerHTML='';items.forEach(item=>{const card=document.createElement('div');card.className='gpt5sa-card';const meta=[item.brand,item.category].filter(Boolean).join(' • ');card.innerHTML=(item.image?'<img src=\"'+item.image+'\" alt=\"\"/>':'')+'<strong>'+escapeHTML(item.name||'Producto')+'</strong><span class=\"price\">'+escapeHTML(item.price||'')+'</span>'+(meta?'<div class=\"muted\">'+escapeHTML(meta)+'</div>':'')+'<div class=\"actions\"><a href=\"'+(item.permalink||'#')+'\" target=\"_blank\" rel=\"noopener\">Ver</a>'+(item.add_to_cart?'':'')+'</div>';
 const actions=card.querySelector('.actions');
 if(item.add_to_cart){const btn=document.createElement('button');btn.type='button';btn.textContent='Añadir';btn.addEventListener('click',()=>addToCart(btn,item));actions.appendChild(btn);}else{const span=document.createElement('span');span.className='muted';span.textContent='Agotado';actions.appendChild(span);}slider.appendChild(card);});}
 async function addToCart(btn,item){btn.disabled=true;btn.textContent='…';try{const res=await fetch(cfg.rest+'wc-add-to-cart',{method:'POST',headers:{'Content-Type':'application/json','X-GPT5SA-Nonce':cfg.nonce},credentials:'include',body:JSON.stringify({product_id:item.id})});const data=await res.json();if(!res.ok)throw new Error(data.message||'Error');btn.textContent='Agregado';setTimeout(()=>{btn.textContent='Añadir';btn.disabled=false;},1500);}catch(e){btn.textContent='Error';setTimeout(()=>{btn.textContent='Añadir';btn.disabled=false;},2000);}}
@@ -257,9 +258,10 @@ async function addToCart(btn,item){btn.disabled=true;btn.textContent='…';try{c
         $keywords = $this->extract_keywords($message);
         [$product_context, $product_cards] = $this->collect_product_context($keywords, 6);
         $post_context = $this->collect_post_context($keywords, 4);
+        $taxonomy_context = $this->collect_taxonomy_context($keywords, 6);
         $sitemap_context = $this->collect_sitemap_context($keywords, 4);
 
-        $context_lines = array_merge($product_context, $post_context, $sitemap_context);
+        $context_lines = array_merge($product_context, $post_context, $taxonomy_context, $sitemap_context);
         $context_text = implode("\n", $context_lines);
 
         $reply = $this->ask_openai($message, $context_text);
@@ -411,16 +413,24 @@ async function addToCart(btn,item){btn.disabled=true;btn.textContent='…';try{c
             $price_text = $price === '' ? __('Consultar precio', 'gpt5-sa') : strip_tags(wc_price($price));
             $permalink = get_permalink($product->get_id());
             $brand = '';
+            $categories = [];
             if ($brand_attr && function_exists('wc_get_product_terms')) {
                 $terms = wc_get_product_terms($product->get_id(), $brand_attr, ['fields' => 'names']);
                 if (!is_wp_error($terms) && !empty($terms)) {
                     $brand = implode(', ', $terms);
                 }
             }
+            if (function_exists('wc_get_product_terms')) {
+                $cat_terms = wc_get_product_terms($product->get_id(), 'product_cat', ['fields' => 'names']);
+                if (!is_wp_error($cat_terms) && !empty($cat_terms)) {
+                    $categories = $cat_terms;
+                }
+            }
 
             $context[] = sprintf(
-                __('Producto: %1$s | Precio: %2$s | Marca: %3$s | Enlace: %4$s', 'gpt5-sa'),
+                __('Producto: %1$s | Categorías: %2$s | Precio: %3$s | Marca: %4$s | Enlace: %5$s', 'gpt5-sa'),
                 $product->get_name(),
+                $categories ? implode(', ', $categories) : __('Sin categoría', 'gpt5-sa'),
                 $price_text,
                 $brand ?: __('Sin marca', 'gpt5-sa'),
                 $permalink
@@ -433,11 +443,57 @@ async function addToCart(btn,item){btn.disabled=true;btn.textContent='…';try{c
                 'permalink' => $permalink,
                 'image' => $product->get_image_id() ? wp_get_attachment_image_url($product->get_image_id(), 'medium') : '',
                 'brand' => $brand,
+                'category' => $categories ? implode(', ', $categories) : '',
                 'add_to_cart' => $product->is_in_stock(),
             ];
         }
 
         return [$context, $cards];
+    }
+
+    private function collect_taxonomy_context($keywords, $limit = 6) {
+        if (!taxonomy_exists('product_cat') && !taxonomy_exists('pa_brand')) {
+            return [];
+        }
+
+        $taxonomies = [];
+        if (taxonomy_exists('product_cat')) {
+            $taxonomies[] = 'product_cat';
+        }
+        if (taxonomy_exists('pa_brand')) {
+            $taxonomies[] = 'pa_brand';
+        }
+
+        $context = [];
+        foreach ($taxonomies as $taxonomy) {
+            $args = [
+                'taxonomy' => $taxonomy,
+                'hide_empty' => false,
+                'number' => $limit,
+            ];
+            if (!empty($keywords)) {
+                $args['name__like'] = implode(' ', $keywords);
+            }
+
+            $terms = get_terms($args);
+            if (is_wp_error($terms) || empty($terms)) {
+                continue;
+            }
+
+            foreach ($terms as $term) {
+                $context[] = sprintf(
+                    __('%1$s: %2$s - %3$s', 'gpt5-sa'),
+                    $taxonomy === 'product_cat' ? __('Categoría', 'gpt5-sa') : __('Marca', 'gpt5-sa'),
+                    $term->name,
+                    $term->description ? wp_trim_words($term->description, 24, '…') : __('Sin descripción', 'gpt5-sa')
+                );
+                if (count($context) >= $limit) {
+                    break 2;
+                }
+            }
+        }
+
+        return $context;
     }
 
     private function collect_post_context($keywords, $limit = 4) {
@@ -499,6 +555,11 @@ async function addToCart(btn,item){btn.disabled=true;btn.textContent='…';try{c
     }
 
     private function fetch_sitemap_entries() {
+        $cached = get_transient(self::TRANSIENT_SITEMAP);
+        if (is_array($cached) && !empty($cached)) {
+            return $cached;
+        }
+
         $candidates = [
             home_url('/sitemap_index.xml'),
             home_url('/sitemap.xml'),
@@ -568,6 +629,10 @@ async function addToCart(btn,item){btn.disabled=true;btn.textContent='…';try{c
             if (!empty($urls)) {
                 break;
             }
+        }
+
+        if (!empty($urls)) {
+            set_transient(self::TRANSIENT_SITEMAP, $urls, HOUR_IN_SECONDS);
         }
 
         return $urls;

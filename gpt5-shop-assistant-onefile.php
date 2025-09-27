@@ -171,7 +171,7 @@ class GPT5_Shop_Assistant_Onefile {
             ['enable_widget', 'checkbox', __('Mostrar widget', 'gpt5-sa')],
             ['enable_catalog', 'checkbox', __('Vista catálogo', 'gpt5-sa')],
             ['enable_recs', 'checkbox', __('Recomendaciones (Recs)', 'gpt5-sa')],
-            ['wc_brand_attribute', 'text', __('Atributo de marca (WooCommerce)', 'gpt5-sa')],
+            ['wc_brand_attribute', 'text', __('Atributo de marca (WooCommerce, usar slug completo. Ej: pa_brand)', 'gpt5-sa')],
             ['rate_ip_burst', 'number', __('Límite ráfaga por IP', 'gpt5-sa')],
             ['rate_user_burst', 'number', __('Límite ráfaga por usuario', 'gpt5-sa')],
             ['rate_window_sec', 'number', __('Ventana rate limit (s)', 'gpt5-sa')],
@@ -761,6 +761,7 @@ class GPT5_Shop_Assistant_Onefile {
         $keywords = $this->extract_keywords($message);
 
         if (class_exists('WooCommerce')) {
+            $context = array_merge($context, $this->collect_taxonomy_context());
             $context = array_merge($context, $this->context_from_products($message, $keywords));
         }
 
@@ -769,6 +770,52 @@ class GPT5_Shop_Assistant_Onefile {
 
         $context = array_values(array_filter(array_unique($context)));
         return array_slice($context, 0, 6);
+    }
+
+    private function get_brand_taxonomy() {
+        $settings = $this->get_settings();
+        $brand_attr = isset($settings['wc_brand_attribute']) ? sanitize_key($settings['wc_brand_attribute']) : '';
+        if (!$brand_attr) {
+            return '';
+        }
+        return taxonomy_exists($brand_attr) ? $brand_attr : '';
+    }
+
+    private function collect_taxonomy_context() {
+        $context = [];
+        $brand_attr = $this->get_brand_taxonomy();
+
+        if ($brand_attr) {
+            $brand_terms = get_terms([
+                'taxonomy' => $brand_attr,
+                'hide_empty' => true,
+                'number' => 6,
+                'orderby' => 'count',
+                'order' => 'DESC',
+            ]);
+            if (!is_wp_error($brand_terms) && !empty($brand_terms)) {
+                $brand_names = array_slice(wp_list_pluck($brand_terms, 'name'), 0, 6);
+                $taxonomy_obj = get_taxonomy($brand_attr);
+                $label = ($taxonomy_obj && !empty($taxonomy_obj->labels->name)) ? $taxonomy_obj->labels->name : $brand_attr;
+                $context[] = sprintf(__('Marcas populares (%1$s): %2$s', 'gpt5-sa'), $label, implode(', ', $brand_names));
+            }
+        }
+
+        if (taxonomy_exists('product_cat')) {
+            $category_terms = get_terms([
+                'taxonomy' => 'product_cat',
+                'hide_empty' => true,
+                'number' => 6,
+                'orderby' => 'count',
+                'order' => 'DESC',
+            ]);
+            if (!is_wp_error($category_terms) && !empty($category_terms)) {
+                $category_names = array_slice(wp_list_pluck($category_terms, 'name'), 0, 6);
+                $context[] = sprintf(__('Categorías populares: %s', 'gpt5-sa'), implode(', ', $category_names));
+            }
+        }
+
+        return $context;
     }
 
     private function extract_keywords($message) {
@@ -790,7 +837,7 @@ class GPT5_Shop_Assistant_Onefile {
             'post_status' => 'publish',
         ];
         $query = new WP_Query($args);
-        $brand_attr = $this->get_settings()['wc_brand_attribute'];
+        $brand_attr = $this->get_brand_taxonomy();
 
         foreach ($query->posts as $post) {
             $product = wc_get_product($post->ID);
@@ -806,7 +853,11 @@ class GPT5_Shop_Assistant_Onefile {
 
             $price_raw = $product->get_price();
             $price = $price_raw !== '' ? strip_tags(wc_price($price_raw)) : __('Consultar', 'gpt5-sa');
-            $brands = implode(', ', wc_get_product_terms($product->get_id(), $brand_attr, ['fields' => 'names']));
+            $brand_terms = $brand_attr ? wc_get_product_terms($product->get_id(), $brand_attr, ['fields' => 'names']) : [];
+            if (is_wp_error($brand_terms)) {
+                $brand_terms = [];
+            }
+            $brands = implode(', ', $brand_terms);
             $cats = implode(', ', wc_get_product_terms($product->get_id(), 'product_cat', ['fields' => 'names']));
             $description = $product->get_short_description();
             if (!$description) $description = $product->get_description();
@@ -1167,11 +1218,13 @@ class GPT5_Shop_Assistant_Onefile {
         $rl = $this->rate_limit_check();
         if (is_wp_error($rl)) return $rl;
 
-        $brand_attr = $this->get_settings()['wc_brand_attribute'];
+        $brand_attr = $this->get_brand_taxonomy();
         $popular_brands = [];
-        if (taxonomy_exists($brand_attr)) {
+        if ($brand_attr) {
             $terms = get_terms(['taxonomy'=>$brand_attr, 'hide_empty'=>true, 'number'=>12]);
-            foreach ($terms as $t) { $popular_brands[] = $t->name; }
+            if (!is_wp_error($terms)) {
+                foreach ($terms as $t) { $popular_brands[] = $t->name; }
+            }
         }
         $popular_cats = [];
         $cats = get_terms(['taxonomy'=>'product_cat', 'hide_empty'=>true, 'number'=>12]);
@@ -1233,15 +1286,16 @@ class GPT5_Shop_Assistant_Onefile {
         $ids = $query->get_products();
 
         $items = [];
-        $brand_attr = $this->get_settings()['wc_brand_attribute'];
+        $brand_attr = $this->get_brand_taxonomy();
         foreach ($ids as $pid) {
             $p = wc_get_product($pid);
             if (!$p) continue;
             if ($max_price && floatval($p->get_price()) > $max_price) continue;
             if ($min_price && floatval($p->get_price()) < $min_price) continue;
             if ($instock_only && !$p->is_in_stock()) continue;
-            if ($brand) {
+            if ($brand && $brand_attr) {
                 $terms = wc_get_product_terms($pid, $brand_attr, ['fields'=>'names']);
+                if (is_wp_error($terms)) { $terms = []; }
                 if (!$terms || !in_array($brand, $terms, true)) continue;
             }
             $stock = $p->is_in_stock() ? 1 : 0;
@@ -1261,6 +1315,14 @@ class GPT5_Shop_Assistant_Onefile {
                     $variations[] = ['variation_id'=>$vid, 'attributes'=>$atts];
                 }
             }
+            $brand_names = [];
+            if ($brand_attr) {
+                $brand_terms = wc_get_product_terms($pid, $brand_attr, ['fields'=>'names']);
+                if (!is_wp_error($brand_terms)) {
+                    $brand_names = $brand_terms;
+                }
+            }
+
             $items[] = [
                 'id'=>$pid,
                 'name'=>$p->get_name(),
@@ -1269,7 +1331,7 @@ class GPT5_Shop_Assistant_Onefile {
                 'permalink'=>get_permalink($pid),
                 'image'=>wp_get_attachment_image_url($p->get_image_id(),'medium'),
                 'score'=>$score,
-                'brand'=>implode(', ', wc_get_product_terms($pid, $brand_attr, ['fields'=>'names'])),
+                'brand'=>implode(', ', $brand_names),
                 'variations'=>$variations,
             ];
         }
@@ -1328,7 +1390,7 @@ class GPT5_Shop_Assistant_Onefile {
         if (is_wp_error($rl)) return $rl;
 
         $limit = max(1, min(12, intval($req->get_param('limit') ?: 8)));
-        $brand_attr = $this->get_settings()['wc_brand_attribute'];
+        $brand_attr = $this->get_brand_taxonomy();
 
         $cart_ready = $this->ensure_cart_ready();
         $cart = (!is_wp_error($cart_ready) && function_exists('WC')) ? WC()->cart : null;
@@ -1337,7 +1399,12 @@ class GPT5_Shop_Assistant_Onefile {
         $viewed = array_reverse($viewed);
         $liked_brands = []; $liked_cats = [];
         foreach ($viewed as $pid) {
-            $liked_brands = array_merge($liked_brands, wc_get_product_terms($pid, $brand_attr, ['fields'=>'names']));
+            if ($brand_attr) {
+                $terms = wc_get_product_terms($pid, $brand_attr, ['fields'=>'names']);
+                if (!is_wp_error($terms)) {
+                    $liked_brands = array_merge($liked_brands, $terms);
+                }
+            }
             $liked_cats = array_merge($liked_cats, wc_get_product_terms($pid, 'product_cat', ['fields'=>'names']));
         }
         $liked_brands = array_unique($liked_brands);
@@ -1367,7 +1434,13 @@ class GPT5_Shop_Assistant_Onefile {
             $score = 0;
             $score += intval(get_post_meta($pid, 'total_sales', true));
             if ($p->is_in_stock()) $score += 200;
-            $p_brands = wc_get_product_terms($pid, $brand_attr, ['fields'=>'names']);
+            $p_brands = [];
+            if ($brand_attr) {
+                $terms = wc_get_product_terms($pid, $brand_attr, ['fields'=>'names']);
+                if (!is_wp_error($terms)) {
+                    $p_brands = $terms;
+                }
+            }
             $p_cats = wc_get_product_terms($pid, 'product_cat', ['fields'=>'names']);
             if (!empty(array_intersect($p_brands, $liked_brands))) $score += 150;
             if (!empty(array_intersect($p_cats, $liked_cats))) $score += 120;
@@ -1381,6 +1454,13 @@ class GPT5_Shop_Assistant_Onefile {
         foreach ($scored as $row) {
             $pid = $row['id'];
             $p = wc_get_product($pid);
+            $brand_names = [];
+            if ($brand_attr) {
+                $brand_terms = wc_get_product_terms($pid, $brand_attr, ['fields'=>'names']);
+                if (!is_wp_error($brand_terms)) {
+                    $brand_names = $brand_terms;
+                }
+            }
             $items[] = [
                 'id'=>$pid,
                 'name'=>$p->get_name(),
@@ -1388,7 +1468,7 @@ class GPT5_Shop_Assistant_Onefile {
                 'stock'=>$p->is_in_stock(),
                 'permalink'=>get_permalink($pid),
                 'image'=>wp_get_attachment_image_url($p->get_image_id(),'medium'),
-                'brand'=>implode(', ', wc_get_product_terms($pid, $brand_attr, ['fields'=>'names'])),
+                'brand'=>implode(', ', $brand_names),
             ];
         }
         return new WP_REST_Response(['items'=>$items]);

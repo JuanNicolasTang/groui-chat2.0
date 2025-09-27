@@ -1,18 +1,23 @@
 <?php
 /**
- * Admin settings for the assistant.
+ * Admin settings for the GROUI Smart Assistant.
+ *
+ * This class registers a top‑level menu in the WordPress admin where site
+ * administrators can configure the plugin. It defines and sanitizes the
+ * available options, renders the settings page and displays notices when
+ * required configuration (such as an OpenAI API key) is missing.
  *
  * @package GROUI_Smart_Assistant
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
-    exit;
-}
+defined( 'ABSPATH' ) || exit;
 
 class GROUI_Smart_Assistant_Admin {
 
     /**
      * Constructor.
+     *
+     * Hooks into WordPress to register admin screens, settings and notices.
      */
     public function __construct() {
         add_action( 'admin_menu', array( $this, 'register_menu' ) );
@@ -22,7 +27,9 @@ class GROUI_Smart_Assistant_Admin {
     }
 
     /**
-     * Register plugin menu.
+     * Register the plugin menu in the dashboard.
+     *
+     * @return void
      */
     public function register_menu() {
         add_menu_page(
@@ -36,11 +43,14 @@ class GROUI_Smart_Assistant_Admin {
     }
 
     /**
-     * Register settings.
+     * Register plugin settings and fields.
+     *
+     * @return void
      */
     public function register_settings() {
         register_setting( 'groui-smart-assistant', GROUI_Smart_Assistant::OPTION_KEY, array( $this, 'sanitize_settings' ) );
 
+        // General section.
         add_settings_section(
             'groui_smart_assistant_general',
             __( 'Configuración General', 'groui-smart-assistant' ),
@@ -48,6 +58,7 @@ class GROUI_Smart_Assistant_Admin {
             'groui-smart-assistant'
         );
 
+        // API key.
         add_settings_field(
             'openai_api_key',
             __( 'OpenAI API Key', 'groui-smart-assistant' ),
@@ -56,10 +67,11 @@ class GROUI_Smart_Assistant_Admin {
             'groui_smart_assistant_general',
             array(
                 'id'          => 'openai_api_key',
-                'description' => __( 'Introduce tu clave de OpenAI con acceso a GPT-5.', 'groui-smart-assistant' ),
+                'description' => __( 'Introduce tu clave de OpenAI con acceso a GPT‑5.', 'groui-smart-assistant' ),
             )
         );
 
+        // Model.
         add_settings_field(
             'model',
             __( 'Modelo de OpenAI', 'groui-smart-assistant' ),
@@ -68,10 +80,11 @@ class GROUI_Smart_Assistant_Admin {
             'groui_smart_assistant_general',
             array(
                 'id'          => 'model',
-                'description' => __( 'Por defecto: gpt-5.1', 'groui-smart-assistant' ),
+                'description' => __( 'Por defecto: gpt‑5.1', 'groui-smart-assistant' ),
             )
         );
 
+        // Sitemap URL.
         add_settings_field(
             'sitemap_url',
             __( 'URL del sitemap', 'groui-smart-assistant' ),
@@ -84,6 +97,7 @@ class GROUI_Smart_Assistant_Admin {
             )
         );
 
+        // Max pages.
         add_settings_field(
             'max_pages',
             __( 'Máximo de páginas a indexar', 'groui-smart-assistant' ),
@@ -98,6 +112,7 @@ class GROUI_Smart_Assistant_Admin {
             )
         );
 
+        // Max products.
         add_settings_field(
             'max_products',
             __( 'Máximo de productos a indexar', 'groui-smart-assistant' ),
@@ -112,6 +127,7 @@ class GROUI_Smart_Assistant_Admin {
             )
         );
 
+        // Debug toggle.
         add_settings_field(
             'enable_debug',
             __( 'Habilitar modo depuración', 'groui-smart-assistant' ),
@@ -126,15 +142,16 @@ class GROUI_Smart_Assistant_Admin {
     }
 
     /**
-     * Sanitize settings.
+     * Sanitize settings callback.
+     *
+     * Ensures all options are sanitized and constrained to expected ranges.
      *
      * @param array $settings Raw settings.
      *
-     * @return array
+     * @return array Sanitized values.
      */
     public function sanitize_settings( $settings ) {
         $sanitized = array();
-
         $sanitized['openai_api_key'] = isset( $settings['openai_api_key'] ) ? trim( sanitize_text_field( $settings['openai_api_key'] ) ) : '';
         $sanitized['model']          = isset( $settings['model'] ) ? trim( sanitize_text_field( $settings['model'] ) ) : 'gpt-5.1';
         $sanitized['sitemap_url']    = isset( $settings['sitemap_url'] ) ? esc_url_raw( $settings['sitemap_url'] ) : home_url( '/sitemap.xml' );
@@ -142,37 +159,37 @@ class GROUI_Smart_Assistant_Admin {
         $sanitized['max_products']   = isset( $settings['max_products'] ) ? min( 50, max( 5, absint( $settings['max_products'] ) ) ) : 12;
         $sanitized['enable_debug']   = ! empty( $settings['enable_debug'] );
 
+        // Flush cached context whenever settings change.
         delete_transient( GROUI_Smart_Assistant::CONTEXT_TRANSIENT );
-
         return $sanitized;
     }
 
     /**
-     * Render text field.
+     * Render a generic text field.
      *
-     * @param array $args Args.
+     * @param array $args Field arguments.
+     * @return void
      */
     public function render_text_field( $args ) {
         $options = get_option( GROUI_Smart_Assistant::OPTION_KEY, array() );
         $value   = isset( $options[ $args['id'] ] ) ? esc_attr( $options[ $args['id'] ] ) : '';
         printf( '<input type="text" class="regular-text" id="%1$s" name="%2$s[%1$s]" value="%3$s" />', esc_attr( $args['id'] ), esc_attr( GROUI_Smart_Assistant::OPTION_KEY ), $value );
-
         if ( ! empty( $args['description'] ) ) {
             printf( '<p class="description">%s</p>', esc_html( $args['description'] ) );
         }
     }
 
     /**
-     * Render number field.
+     * Render a number field.
      *
-     * @param array $args Args.
+     * @param array $args Field arguments.
+     * @return void
      */
     public function render_number_field( $args ) {
         $options = get_option( GROUI_Smart_Assistant::OPTION_KEY, array() );
         $value   = isset( $options[ $args['id'] ] ) ? absint( $options[ $args['id'] ] ) : '';
         $min     = isset( $args['min'] ) ? absint( $args['min'] ) : 0;
         $max     = isset( $args['max'] ) ? absint( $args['max'] ) : 100;
-
         printf(
             '<input type="number" class="small-text" id="%1$s" name="%2$s[%1$s]" value="%3$s" min="%4$s" max="%5$s" />',
             esc_attr( $args['id'] ),
@@ -181,21 +198,20 @@ class GROUI_Smart_Assistant_Admin {
             esc_attr( $min ),
             esc_attr( $max )
         );
-
         if ( ! empty( $args['description'] ) ) {
             printf( '<p class="description">%s</p>', esc_html( $args['description'] ) );
         }
     }
 
     /**
-     * Render checkbox field.
+     * Render a checkbox field.
      *
-     * @param array $args Args.
+     * @param array $args Field arguments.
+     * @return void
      */
     public function render_checkbox_field( $args ) {
         $options = get_option( GROUI_Smart_Assistant::OPTION_KEY, array() );
         $value   = ! empty( $options[ $args['id'] ] );
-
         printf(
             '<label><input type="checkbox" id="%1$s" name="%2$s[%1$s]" value="1" %3$s /> %4$s</label>',
             esc_attr( $args['id'] ),
@@ -206,7 +222,9 @@ class GROUI_Smart_Assistant_Admin {
     }
 
     /**
-     * Display settings page.
+     * Render the plugin settings page.
+     *
+     * @return void
      */
     public function render_settings_page() {
         ?>
@@ -224,13 +242,14 @@ class GROUI_Smart_Assistant_Admin {
     }
 
     /**
-     * Show admin notice when API key missing.
+     * Display an admin notice if the API key is missing.
+     *
+     * @return void
      */
     public function maybe_show_missing_key_notice() {
         if ( ! current_user_can( 'manage_options' ) ) {
             return;
         }
-
         $settings = get_option( GROUI_Smart_Assistant::OPTION_KEY, array() );
         if ( empty( $settings['openai_api_key'] ) ) {
             printf(
@@ -241,7 +260,9 @@ class GROUI_Smart_Assistant_Admin {
     }
 
     /**
-     * Cron callback to refresh context.
+     * Cron task to refresh the knowledge context.
+     *
+     * @return void
      */
     public function refresh_context_cron() {
         $context = GROUI_Smart_Assistant_Context::instance();

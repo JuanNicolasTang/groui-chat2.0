@@ -27,14 +27,43 @@ class GPT5_Shop_Assistant_Onefile {
         add_action('wp_footer', [$this, 'render_widget']);
         add_action('rest_api_init', [$this, 'register_routes']);
         add_filter('rest_pre_serve_request', function($served, $result, $request, $server){
+            if (!($request instanceof WP_REST_Request)) {
+                return $served;
+            }
+
+            $attributes = $request->get_attributes();
+            $namespace = is_array($attributes) ? ($attributes['namespace'] ?? '') : '';
+            $route = $request->get_route();
+            $route_key = is_string($route) ? rtrim($route, '/') : '';
+
+            $is_assistant_route = ($namespace === 'gpt5sa/v1');
+            if (!$is_assistant_route && is_string($route)) {
+                $is_assistant_route = (strpos($route, '/gpt5sa/v1') === 0);
+            }
+
+            if (!$is_assistant_route) {
+                return $served;
+            }
+
             $this->cors_header();
-            if ('OPTIONS' === $_SERVER['REQUEST_METHOD']) {
-                header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-                header('Access-Control-Allow-Headers: Content-Type, X-GPT5SA-Nonce');
-                header('Access-Control-Max-Age: 600');
+
+            $allowed_methods_map = [
+                '/gpt5sa/v1/chat' => 'POST, OPTIONS',
+                '/gpt5sa/v1/wc-add-to-cart' => 'POST, OPTIONS',
+                '/gpt5sa/v1/wc-search' => 'GET, OPTIONS',
+                '/gpt5sa/v1/wc-facets' => 'GET, OPTIONS',
+                '/gpt5sa/v1/recs' => 'GET, OPTIONS',
+            ];
+            $allowed_methods = $allowed_methods_map[$route_key] ?? 'GET, POST, OPTIONS';
+
+            header('Access-Control-Allow-Methods: ' . $allowed_methods);
+            header('Access-Control-Allow-Headers: Content-Type, X-GPT5SA-Nonce');
+            header('Access-Control-Max-Age: 600');
+            header('Vary: Origin, Access-Control-Request-Headers');
+
+            if ('OPTIONS' === ($_SERVER['REQUEST_METHOD'] ?? '')) {
                 return true;
             }
-            header('Vary: Origin, Access-Control-Request-Headers');
             return $served;
         }, 10, 4);
 

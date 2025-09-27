@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: GPT5 Shop Assistant (Onefile)
- * Description: Asistente de compra con RAG, streaming, catálogo con filtros/chips, mini-carrito y recomendaciones. Soporta proveedores OpenAI-compatibles (OpenAI, Azure, OpenRouter, Local).
+ * Plugin Name: GROUI CHAT
+ * Description: Asistente de compra groui
  * Version: 1.5.2
- * Author: You
+ * Author: GROUI
  * Text Domain: gpt5-sa
  * Domain Path: /languages
  */

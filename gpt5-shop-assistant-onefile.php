@@ -695,6 +695,20 @@ class GPT5_Shop_Assistant_Onefile {
             $headers = ['Authorization: Bearer '.$opts['api_key'], 'Content-Type: application/json'];
         }
 
+        if (!function_exists('curl_init') || !function_exists('curl_exec')) {
+            $payload['stream'] = false;
+            $resp = $this->call_provider($payload, $opts, $provider);
+            if (is_wp_error($resp)) {
+                return $resp;
+            }
+            $text = $resp['text'] ?? '';
+            if ($text !== '') {
+                echo 'data: ' . wp_json_encode(['delta' => $text]) . "\n\n";
+                @ob_flush(); @flush();
+            }
+            return null;
+        }
+
         $payload['stream'] = true;
         $ch = curl_init($url);
         curl_setopt_array($ch, [

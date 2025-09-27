@@ -161,15 +161,39 @@ class GPT5_Shop_Assistant_Onefile {
     }
 
     public function sanitize_settings($opts) {
-        $d = self::default_settings();
-        $res = [];
-        foreach ($d as $k=>$v) {
-            if (isset($opts[$k])) { $res[$k] = $opts[$k]; }
+        if (!is_array($opts)) {
+            $opts = [];
         }
+
+        $res = self::default_settings();
+        $bool_fields = [
+            'privacy_strip_pii',
+            'economy_mode',
+            'enable_streaming',
+            'enable_analytics',
+            'enable_widget',
+            'enable_catalog',
+            'enable_recs',
+        ];
+
+        foreach ($bool_fields as $flag) {
+            $res[$flag] = !empty($opts[$flag]) ? 1 : 0;
+        }
+
+        foreach ($res as $k => $v) {
+            if (in_array($k, $bool_fields, true)) {
+                continue;
+            }
+            if (isset($opts[$k])) {
+                $res[$k] = $opts[$k];
+            }
+        }
+
         $res['max_tokens'] = max(64, intval($res['max_tokens']));
         $res['temperature'] = min(2.0, max(0.0, floatval($res['temperature'])));
         $res['allowed_origins'] = sanitize_text_field($res['allowed_origins']);
         $res['api_base'] = esc_url_raw($res['api_base']);
+
         return $res;
     }
 

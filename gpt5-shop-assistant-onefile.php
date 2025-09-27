@@ -405,6 +405,64 @@ class GPT5_Shop_Assistant_Onefile {
         header('Vary: Origin');
     }
 
+    private function ensure_cart_ready() {
+        if (!function_exists('WC')) {
+            return new WP_Error('woocommerce_inactive', __('WooCommerce no está activo', 'gpt5-sa'), ['status' => 500]);
+        }
+
+        try {
+            $wc = WC();
+        } catch (\Throwable $e) {
+            error_log('[gpt5sa] WooCommerce bootstrap error: ' . $e->getMessage());
+            return new WP_Error('woocommerce_inactive', __('WooCommerce no está disponible', 'gpt5-sa'), ['status' => 500]);
+        }
+
+        if (!$wc) {
+            return new WP_Error('woocommerce_inactive', __('WooCommerce no está disponible', 'gpt5-sa'), ['status' => 500]);
+        }
+
+        try {
+            if (function_exists('wc_load_cart')) {
+                wc_load_cart();
+            } elseif (method_exists($wc, 'initialize_cart')) {
+                $wc->initialize_cart();
+            }
+
+            if (isset($wc->session) && is_object($wc->session) && method_exists($wc->session, 'has_session')) {
+                $has_session = $wc->session->has_session();
+                if (!$has_session && method_exists($wc->session, 'init')) {
+                    $wc->session->init();
+                }
+            }
+
+            if ((empty($wc->cart) || !is_object($wc->cart)) && class_exists('WC_Cart')) {
+                $wc->cart = new WC_Cart();
+            }
+        } catch (\Throwable $e) {
+            error_log('[gpt5sa] WooCommerce cart init error: ' . $e->getMessage());
+            return new WP_Error('cart_unavailable', __('No se pudo inicializar el carrito de WooCommerce.', 'gpt5-sa'), ['status' => 500]);
+        }
+
+        if (empty($wc->cart) || !is_object($wc->cart)) {
+            return new WP_Error('cart_unavailable', __('No se pudo inicializar el carrito de WooCommerce.', 'gpt5-sa'), ['status' => 500]);
+        }
+
+        return $wc->cart;
+    }
+
+    private function rest_error_response(WP_Error $error) {
+        $data = $error->get_error_data();
+        $status = 500;
+        if (is_array($data) && isset($data['status'])) {
+            $status = intval($data['status']);
+        }
+        return new WP_REST_Response([
+            'ok' => false,
+            'code' => $error->get_error_code(),
+            'message' => $error->get_error_message(),
+        ], $status);
+    }
+
     private function widget_js($nonce) {
         $rest_url = esc_url_raw( rest_url('gpt5sa/v1') );
         $opts = $this->get_settings();
@@ -1018,6 +1076,12 @@ class GPT5_Shop_Assistant_Onefile {
         $rl = $this->rate_limit_check();
         if (is_wp_error($rl)) return $rl;
 
+        $cart_ready = $this->ensure_cart_ready();
+        if (is_wp_error($cart_ready)) {
+            return $this->rest_error_response($cart_ready);
+        }
+        $cart = $cart_ready;
+
         $params = $req->get_json_params();
         $pid = intval($params['product_id'] ?? 0);
         $vid = intval($params['variation_id'] ?? 0);
@@ -1029,16 +1093,16 @@ class GPT5_Shop_Assistant_Onefile {
             if (!$v->is_in_stock()) return new WP_REST_Response(['message'=>__('Variación sin stock', 'gpt5-sa')], 409);
             $parent_id = $v->get_parent_id();
             $variation_data = $v->get_variation_attributes(); // pasa atributos completos
-            $added = WC()->cart->add_to_cart($parent_id, $qty, $vid, $variation_data);
+            $added = $cart->add_to_cart($parent_id, $qty, $vid, $variation_data);
         } else {
             if (!$pid) return new WP_REST_Response(['message'=>__('Falta product_id', 'gpt5-sa')], 400);
             $p = wc_get_product($pid);
             if (!$p) return new WP_REST_Response(['message'=>__('Producto no encontrado', 'gpt5-sa')], 404);
             if (!$p->is_in_stock()) return new WP_REST_Response(['message'=>__('Producto sin stock', 'gpt5-sa')], 409);
-            $added = WC()->cart->add_to_cart($pid, $qty);
+            $added = $cart->add_to_cart($pid, $qty);
         }
         if (!$added) return new WP_REST_Response(['message'=>__('No se pudo agregar al carrito', 'gpt5-sa')], 500);
-        return new WP_REST_Response(['ok'=>true, 'cart_count'=>WC()->cart->get_cart_contents_count()]);
+        return new WP_REST_Response(['ok'=>true, 'cart_count'=>$cart->get_cart_contents_count()]);
     }
 
     // ------- Recomendaciones --------
@@ -1054,6 +1118,15 @@ class GPT5_Shop_Assistant_Onefile {
         $limit = max(1, min(12, intval($req->get_param('limit') ?: 8)));
         $brand_attr = $this->get_settings()['wc_brand_attribute'];
 
+        $cart_note = null;
+        $cart_ready = $this->ensure_cart_ready();
+        if (is_wp_error($cart_ready)) {
+            $cart_note = $cart_ready->get_error_message();
+            $cart = null;
+        } else {
+            $cart = $cart_ready;
+        }
+
         $viewed = !empty($_COOKIE['woocommerce_recently_viewed']) ? array_filter(array_map('absint', explode('|', $_COOKIE['woocommerce_recently_viewed']))) : [];
         $viewed = array_reverse($viewed);
         $liked_brands = []; $liked_cats = [];
@@ -1065,8 +1138,8 @@ class GPT5_Shop_Assistant_Onefile {
         $liked_cats = array_unique($liked_cats);
 
         $cart_ids = [];
-        if (WC()->cart) {
-            foreach (WC()->cart->get_cart() as $item) { $cart_ids[] = $item['product_id']; }
+        if ($cart) {
+            foreach ($cart->get_cart() as $item) { $cart_ids[] = $item['product_id']; }
         }
 
         $candidates = [];
@@ -1112,7 +1185,11 @@ class GPT5_Shop_Assistant_Onefile {
                 'brand'=>implode(', ', wc_get_product_terms($pid, $brand_attr, ['fields'=>'names'])),
             ];
         }
-        return new WP_REST_Response(['items'=>$items]);
+        $payload = ['items'=>$items];
+        if ($cart_note) {
+            $payload['cart_warning'] = $cart_note;
+        }
+        return new WP_REST_Response($payload);
     }
 }
 

@@ -795,9 +795,10 @@ class GPT5_Shop_Assistant_Onefile {
             's' => $q,
         ];
         if ($min_price || $max_price) {
+            $range = [max(0, $min_price), $max_price > 0 ? $max_price : PHP_INT_MAX];
             $args['meta_query'] = [[
                 'key' => '_price',
-                'value' => array_filter([$min_price ?: 0, $max_price ?: PHP_INT_MAX]),
+                'value' => $range,
                 'compare' => 'BETWEEN',
                 'type' => 'NUMERIC',
             ]];

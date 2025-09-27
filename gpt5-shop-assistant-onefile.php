@@ -171,7 +171,7 @@ class GPT5_Shop_Assistant_Onefile {
             ['enable_widget', 'checkbox', __('Mostrar widget', 'gpt5-sa')],
             ['enable_catalog', 'checkbox', __('Vista catálogo', 'gpt5-sa')],
             ['enable_recs', 'checkbox', __('Recomendaciones (Recs)', 'gpt5-sa')],
-            ['wc_brand_attribute', 'text', __('Atributo de marca (WooCommerce)', 'gpt5-sa')],
+            ['wc_brand_attribute', 'text', __('Atributo de marca (WooCommerce, usar slug completo. Ej: pa_brand)', 'gpt5-sa')],
             ['rate_ip_burst', 'number', __('Límite ráfaga por IP', 'gpt5-sa')],
             ['rate_user_burst', 'number', __('Límite ráfaga por usuario', 'gpt5-sa')],
             ['rate_window_sec', 'number', __('Ventana rate limit (s)', 'gpt5-sa')],
@@ -761,6 +761,7 @@ class GPT5_Shop_Assistant_Onefile {
         $keywords = $this->extract_keywords($message);
 
         if (class_exists('WooCommerce')) {
+            $context = array_merge($context, $this->collect_taxonomy_context());
             $context = array_merge($context, $this->context_from_products($message, $keywords));
         }
 
@@ -769,6 +770,44 @@ class GPT5_Shop_Assistant_Onefile {
 
         $context = array_values(array_filter(array_unique($context)));
         return array_slice($context, 0, 6);
+    }
+
+    private function collect_taxonomy_context() {
+        $context = [];
+        $settings = $this->get_settings();
+        $brand_attr = isset($settings['wc_brand_attribute']) ? $settings['wc_brand_attribute'] : '';
+
+        if ($brand_attr && taxonomy_exists($brand_attr)) {
+            $brand_terms = get_terms([
+                'taxonomy' => $brand_attr,
+                'hide_empty' => true,
+                'number' => 6,
+                'orderby' => 'count',
+                'order' => 'DESC',
+            ]);
+            if (!is_wp_error($brand_terms) && !empty($brand_terms)) {
+                $brand_names = array_slice(wp_list_pluck($brand_terms, 'name'), 0, 6);
+                $taxonomy_obj = get_taxonomy($brand_attr);
+                $label = ($taxonomy_obj && !empty($taxonomy_obj->labels->name)) ? $taxonomy_obj->labels->name : $brand_attr;
+                $context[] = sprintf(__('Marcas populares (%1$s): %2$s', 'gpt5-sa'), $label, implode(', ', $brand_names));
+            }
+        }
+
+        if (taxonomy_exists('product_cat')) {
+            $category_terms = get_terms([
+                'taxonomy' => 'product_cat',
+                'hide_empty' => true,
+                'number' => 6,
+                'orderby' => 'count',
+                'order' => 'DESC',
+            ]);
+            if (!is_wp_error($category_terms) && !empty($category_terms)) {
+                $category_names = array_slice(wp_list_pluck($category_terms, 'name'), 0, 6);
+                $context[] = sprintf(__('Categorías populares: %s', 'gpt5-sa'), implode(', ', $category_names));
+            }
+        }
+
+        return $context;
     }
 
     private function extract_keywords($message) {

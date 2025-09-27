@@ -544,9 +544,14 @@ class GPT5_Shop_Assistant_Onefile {
             return new WP_Error('forbidden', __('Nonce inválido', 'gpt5-sa'), ['status' => 403]);
         }
         $allowed = array_map('trim', explode(',', $opts['allowed_origins']));
+        $allowed = array_filter($allowed, function($x) { return $x !== ''; });
+        $allowed = array_map(function($x){ return $this->normalize_origin_str($x); }, $allowed);
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-        if ($origin && !in_array($origin, $allowed, true)) {
-            return new WP_Error('forbidden', __('Origen no permitido', 'gpt5-sa'), ['status' => 403]);
+        if ($origin) {
+            $norm_origin = $this->normalize_origin_str($origin);
+            if (!in_array($norm_origin, $allowed, true)) {
+                return new WP_Error('forbidden', __('Origen no permitido', 'gpt5-sa'), ['status' => 403]);
+            }
         }
         $this->cors_header();
         return true;

@@ -92,18 +92,4 @@ if ( function_exists( 'add_action' ) ) {
     groui_smart_assistant();
 }
 
-/**
- * Obtener instancia del plugin.
- *
- * Esta función envuelve la llamada al método estático de la clase principal
- * para mantener un único punto de entrada. Devuelve la instancia
- * singleton de GROUI_Smart_Assistant.
- *
- * @return GROUI_Smart_Assistant
- */
-function groui_smart_assistant() {
-    return GROUI_Smart_Assistant::instance();
-}
 
-// Iniciar el plugin.
-groui_smart_assistant();

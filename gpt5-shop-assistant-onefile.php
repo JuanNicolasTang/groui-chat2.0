@@ -164,12 +164,55 @@ class GPT5_Shop_Assistant_Onefile {
         if (!is_array($opts)) {
             $opts = [];
         }
-        $res = self::default_settings();
-        foreach ($res as $k => $v) {
-            if (isset($opts[$k])) {
-                $res[$k] = $opts[$k];
+
+        $defaults = self::default_settings();
+        $res = $defaults;
+
+        $provider = isset($opts['provider']) ? sanitize_key($opts['provider']) : $defaults['provider'];
+        if (!in_array($provider, ['openai', 'azure', 'openrouter', 'local'], true)) {
+            $provider = $defaults['provider'];
+        }
+        $res['provider'] = $provider;
+
+        $res['api_key'] = isset($opts['api_key']) ? sanitize_text_field($opts['api_key']) : '';
+        $res['api_base'] = isset($opts['api_base']) ? esc_url_raw($opts['api_base']) : $defaults['api_base'];
+        $res['azure_deployment'] = isset($opts['azure_deployment']) ? sanitize_text_field($opts['azure_deployment']) : '';
+        $res['azure_api_version'] = isset($opts['azure_api_version']) ? sanitize_text_field($opts['azure_api_version']) : $defaults['azure_api_version'];
+        $res['openrouter_site'] = isset($opts['openrouter_site']) ? esc_url_raw($opts['openrouter_site']) : '';
+        $res['openrouter_title'] = isset($opts['openrouter_title']) ? sanitize_text_field($opts['openrouter_title']) : $defaults['openrouter_title'];
+        $res['model'] = isset($opts['model']) ? sanitize_text_field($opts['model']) : $defaults['model'];
+
+        $origins = [];
+        if (!empty($opts['allowed_origins'])) {
+            $candidates = array_filter(array_map('trim', explode(',', (string) $opts['allowed_origins'])));
+            foreach ($candidates as $candidate) {
+                if ($candidate === '*') {
+                    $origins = ['*'];
+                    break;
+                }
+                $normalized = $this->normalize_origin_str($candidate);
+                if ($normalized !== '') {
+                    $origins[] = $normalized;
+                }
             }
         }
+        if (empty($origins) && !empty($defaults['allowed_origins'])) {
+            $fallback = $this->normalize_origin_str($defaults['allowed_origins']);
+            if ($fallback !== '') {
+                $origins[] = $fallback;
+            }
+        }
+        $origins = array_values(array_unique(array_filter($origins))); // drop empties / duplicates
+        $res['allowed_origins'] = implode(',', $origins);
+
+        $res['max_tokens'] = max(64, intval($opts['max_tokens'] ?? $defaults['max_tokens']));
+        $res['temperature'] = min(2.0, max(0.0, floatval($opts['temperature'] ?? $defaults['temperature'])));
+        $res['rate_ip_burst'] = max(1, intval($opts['rate_ip_burst'] ?? $defaults['rate_ip_burst']));
+        $res['rate_user_burst'] = max(1, intval($opts['rate_user_burst'] ?? $defaults['rate_user_burst']));
+        $res['rate_window_sec'] = max(5, intval($opts['rate_window_sec'] ?? $defaults['rate_window_sec']));
+
+        $res['wc_brand_attribute'] = isset($opts['wc_brand_attribute']) ? sanitize_key($opts['wc_brand_attribute']) : $defaults['wc_brand_attribute'];
+
         $checkboxes = [
             'privacy_strip_pii',
             'economy_mode',
@@ -180,12 +223,9 @@ class GPT5_Shop_Assistant_Onefile {
             'enable_recs',
         ];
         foreach ($checkboxes as $key) {
-            $res[$key] = isset($opts[$key]) ? 1 : 0;
+            $res[$key] = !empty($opts[$key]) ? 1 : 0;
         }
-        $res['max_tokens'] = max(64, intval($res['max_tokens']));
-        $res['temperature'] = min(2.0, max(0.0, floatval($res['temperature'])));
-        $res['allowed_origins'] = sanitize_text_field($res['allowed_origins']);
-        $res['api_base'] = esc_url_raw($res['api_base']);
+
         return $res;
     }
 
@@ -282,23 +322,58 @@ class GPT5_Shop_Assistant_Onefile {
     }
 
     
-    private function normalize_origin_str($o){
-        $o = trim(strtolower($o));
-        $o = rtrim($o, "/");
-        return $o;
+    private function normalize_origin_str($origin){
+        $origin = trim($origin);
+        if ($origin === '') {
+            return '';
+        }
+        if ($origin === '*') {
+            return '*';
+        }
+        $parts = wp_parse_url($origin);
+        if (!$parts || empty($parts['scheme']) || empty($parts['host'])) {
+            return '';
+        }
+        $scheme = strtolower($parts['scheme']);
+        $host = strtolower($parts['host']);
+        $port = '';
+        if (!empty($parts['port'])) {
+            $port_num = intval($parts['port']);
+            $default_ports = ['http' => 80, 'https' => 443];
+            if (!isset($default_ports[$scheme]) || $default_ports[$scheme] !== $port_num) {
+                $port = ':' . $port_num;
+            }
+        }
+        return $scheme . '://' . $host . $port;
     }
 
     private function cors_header() {
         $opts = $this->get_settings();
-        $allowed = array_map('trim', explode(',', $opts['allowed_origins']));
-        $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-        if ($origin) {
-            $norm = $this->normalize_origin_str($origin);
-            $allowed = array_map(function($x){ return $this->normalize_origin_str($x); }, $allowed);
-            if (!in_array($norm, $allowed, true)) { return; }
-            header('Access-Control-Allow-Origin: ' . $origin);
-            header('Vary: Origin');
+        $allowed = array_filter(array_map('trim', explode(',', (string) $opts['allowed_origins'])));
+        if (empty($allowed)) {
+            return;
         }
+
+        if (in_array('*', $allowed, true)) {
+            header('Access-Control-Allow-Origin: *');
+            return;
+        }
+
+        $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+        if (!$origin) {
+            return;
+        }
+        $norm = $this->normalize_origin_str($origin);
+        if ($norm === '') {
+            return;
+        }
+        $allowed_norm = array_filter(array_map(function($x){ return $this->normalize_origin_str($x); }, $allowed));
+        if (!in_array($norm, $allowed_norm, true)) {
+            return;
+        }
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Access-Control-Allow-Credentials: true');
+        header('Vary: Origin');
     }
 
     private function widget_js($nonce) {
@@ -380,7 +455,7 @@ class GPT5_Shop_Assistant_Onefile {
     const body = JSON.stringify({message:content, stream:$enable_streaming?1:0});
     try {
       if ($enable_streaming) {
-        const resp = await fetch('$rest_url/chat', {method:'POST', headers, body});
+        const resp = await fetch('$rest_url/chat', {method:'POST', headers, body, credentials:'include'});
         if (!resp.ok || !resp.body) {
           const data = await resp.json().catch(()=>({message:'Error'}));
           addMsg('<span>'+ (data.message||'Error') +'</span>','bot'); return;
@@ -406,7 +481,7 @@ class GPT5_Shop_Assistant_Onefile {
         }
         gtagPush('stream_complete',{chars:acc.length});
       } else {
-        const resp = await fetch('$rest_url/chat', {method:'POST', headers, body});
+        const resp = await fetch('$rest_url/chat', {method:'POST', headers, body, credentials:'include'});
         const data = await resp.json();
         addMsg(data.message||''); 
       }
@@ -421,7 +496,7 @@ class GPT5_Shop_Assistant_Onefile {
     chips.innerHTML = '';
     try{
       const url = new URL('$rest_url/wc-facets');
-      const resp = await fetch(url, {headers:{'X-GPT5SA-Nonce':'$nonce_js'}});
+      const resp = await fetch(url, {headers:{'X-GPT5SA-Nonce':'$nonce_js'}, credentials:'include'});
       const data = await resp.json();
       const items = [];
       (data.popular_brands||[]).slice(0,6).forEach(b=>items.push({label:'Marca: '+b, apply:()=>{document.getElementById('gpt5sa-brand').value=b;}}));
@@ -451,7 +526,7 @@ class GPT5_Shop_Assistant_Onefile {
     url.searchParams.set('limit', 12);
     if(instock) url.searchParams.set('instock', '1');
     try{
-      const resp = await fetch(url, {headers:{'X-GPT5SA-Nonce':'$nonce_js'}});
+      const resp = await fetch(url, {headers:{'X-GPT5SA-Nonce':'$nonce_js'}, credentials:'include'});
       const data = await resp.json();
       renderGrid(data.items||[]);
     }catch(e){ grid.innerHTML = '<div class=\"gpt5sa-empty\">Error</div>'; }
@@ -482,7 +557,7 @@ class GPT5_Shop_Assistant_Onefile {
       const varSel = card.querySelector('select.var');
       const pid = btn.dataset.id;
       const payload = varSel ? {variation_id: varSel.value, qty:1} : {product_id: pid, qty:1};
-      const res = await fetch('$rest_url/wc-add-to-cart', {method:'POST', headers:{'Content-Type':'application/json','X-GPT5SA-Nonce':'$nonce_js'}, body: JSON.stringify(payload)});
+      const res = await fetch('$rest_url/wc-add-to-cart', {method:'POST', headers:{'Content-Type':'application/json','X-GPT5SA-Nonce':'$nonce_js'}, body: JSON.stringify(payload), credentials:'include'});
       const j = await res.json();
       if(res.ok){ showToast('Añadido al carrito'); } else { showToast(j.message||'Error'); }
     }catch(e){ showToast('Error'); } finally { btn.disabled=false; }
@@ -492,7 +567,7 @@ class GPT5_Shop_Assistant_Onefile {
     recsList.innerHTML = '<div class=\"gpt5sa-empty\">Calculando recomendaciones…</div>';
     try{
       const url = new URL('$rest_url/recs');
-      const resp = await fetch(url, {headers:{'X-GPT5SA-Nonce':'$nonce_js'}});
+      const resp = await fetch(url, {headers:{'X-GPT5SA-Nonce':'$nonce_js'}, credentials:'include'});
       const data = await resp.json();
       const items = data.items||[];
       if(!items.length){ recsList.innerHTML = '<div class=\"gpt5sa-empty\">Sin recomendaciones</div>'; return; }
@@ -559,11 +634,15 @@ class GPT5_Shop_Assistant_Onefile {
         if (!wp_verify_nonce($nonce, self::NONCE_ACTION_PUBLIC)) {
             return new WP_Error('forbidden', __('Nonce inválido', 'gpt5-sa'), ['status' => 403]);
         }
-        $allowed = array_map('trim', explode(',', $opts['allowed_origins']));
+        $allowed = array_filter(array_map('trim', explode(',', (string) $opts['allowed_origins'])));
+        if (in_array('*', $allowed, true)) {
+            $this->cors_header();
+            return true;
+        }
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
         if ($origin) {
             $normalized_origin = $this->normalize_origin_str($origin);
-            $allowed = array_map(function($x){ return $this->normalize_origin_str($x); }, $allowed);
+            $allowed = array_filter(array_map(function($x){ return $this->normalize_origin_str($x); }, $allowed));
             if (!in_array($normalized_origin, $allowed, true)) {
                 return new WP_Error('forbidden', __('Origen no permitido', 'gpt5-sa'), ['status' => 403]);
             }

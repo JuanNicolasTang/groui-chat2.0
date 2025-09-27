@@ -794,11 +794,25 @@ class GPT5_Shop_Assistant_Onefile {
             'return' => 'ids',
             's' => $q,
         ];
-        if ($min_price || $max_price) {
+        if ($min_price && $max_price) {
             $args['meta_query'] = [[
                 'key' => '_price',
-                'value' => array_filter([$min_price ?: 0, $max_price ?: PHP_INT_MAX]),
+                'value' => [$min_price, $max_price],
                 'compare' => 'BETWEEN',
+                'type' => 'NUMERIC',
+            ]];
+        } elseif ($min_price) {
+            $args['meta_query'] = [[
+                'key' => '_price',
+                'value' => $min_price,
+                'compare' => '>=',
+                'type' => 'NUMERIC',
+            ]];
+        } elseif ($max_price) {
+            $args['meta_query'] = [[
+                'key' => '_price',
+                'value' => $max_price,
+                'compare' => '<=',
                 'type' => 'NUMERIC',
             ]];
         }

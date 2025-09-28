@@ -31,7 +31,17 @@ class GROUI_Smart_Assistant_OpenAI {
     public function query( $message, $context ) {
         $settings = get_option( GROUI_Smart_Assistant::OPTION_KEY, array() );
         $api_key  = isset( $settings['openai_api_key'] ) ? trim( $settings['openai_api_key'] ) : '';
-        $model    = ! empty( $settings['model'] ) ? $settings['model'] : 'ggpt-5';
+        $model    = isset( $settings['model'] ) ? $settings['model'] : '';
+        $model    = $this->normalize_model( $model );
+
+        $allowed_models = apply_filters(
+            'groui_smart_assistant_allowed_models',
+            array( 'gpt-5', 'gpt-5-mini', 'gpt-5-nano' )
+        );
+
+        if ( empty( $model ) || ( ! empty( $allowed_models ) && ! in_array( $model, $allowed_models, true ) ) ) {
+            $model = 'gpt-5';
+        }
 
         if ( empty( $api_key ) ) {
             return new WP_Error( 'missing_api_key', __( 'Falta la API key de OpenAI.', 'groui-smart-assistant' ) );
@@ -88,6 +98,11 @@ class GROUI_Smart_Assistant_OpenAI {
         // Handle HTTP errors returned by the API.
         if ( $code >= 400 ) {
             $message = isset( $data['error']['message'] ) ? $data['error']['message'] : __( 'Error desconocido en OpenAI.', 'groui-smart-assistant' );
+
+            if ( false !== stripos( $message, 'model' ) && false !== stripos( $message, 'does not exist' ) ) {
+                $hint     = __( 'Verifica que el nombre del modelo sea exactamente gpt-5, gpt-5-mini o gpt-5-nano y que tu cuenta tenga acceso activo.', 'groui-smart-assistant' );
+                $message .= ' ' . $hint;
+            }
             return new WP_Error( 'openai_error', $message, $data );
         }
 
@@ -141,5 +156,24 @@ class GROUI_Smart_Assistant_OpenAI {
 
         // Use real newlines within the string to avoid double escaping.
         return $instructions . "\n\nContexto:\n" . $summary_text;
+    }
+
+    /**
+     * Normalize the configured model name.
+     *
+     * Ensures the value is lowercase, trimmed and uses hyphens for
+     * whitespace so that values such as "GPT 5" become "gpt-5" before the
+     * request is sent to OpenAI.
+     *
+     * @param string $model Raw model string stored in settings.
+     *
+     * @return string Normalized model identifier.
+     */
+    protected function normalize_model( $model ) {
+        $model = strtolower( trim( (string) $model ) );
+        $model = preg_replace( '/\s+/', '-', $model );
+        $model = preg_replace( '/[^a-z0-9\-.]/', '', $model );
+
+        return $model;
     }
 }

@@ -61,7 +61,6 @@ class GROUI_Smart_Assistant_OpenAI {
                     'content' => $message,
                 ),
             ),
-            'temperature' => 0.3,
         );
 
         /**

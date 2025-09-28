@@ -338,10 +338,14 @@
           pushAssistantMessage(response.data.answer);
         }
 
-        if (response.data.productCards) {
-          renderProducts(response.data.productCards);
-        } else if (state.hasWooCommerce) {
-          requestProducts(content);
+        if (
+          state.hasWooCommerce &&
+          Object.prototype.hasOwnProperty.call(response.data, 'productCards')
+        ) {
+          const cards = Array.isArray(response.data.productCards)
+            ? response.data.productCards
+            : [];
+          renderProducts(cards);
         }
       })
       .fail((jqXHR) => {
@@ -410,7 +414,5 @@
   bindEvents();
   togglePanel(false);
 
-  if (state.hasWooCommerce) {
-    requestProducts('');
-  }
+  // Product recommendations are now opt-in via the refresh button or explicit assistant responses.
 })(jQuery);

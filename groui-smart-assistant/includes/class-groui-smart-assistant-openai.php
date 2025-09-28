@@ -31,7 +31,7 @@ class GROUI_Smart_Assistant_OpenAI {
     public function query( $message, $context ) {
         $settings = get_option( GROUI_Smart_Assistant::OPTION_KEY, array() );
         $api_key  = isset( $settings['openai_api_key'] ) ? trim( $settings['openai_api_key'] ) : '';
-        $model    = ! empty( $settings['model'] ) ? $settings['model'] : 'gpt-5.1';
+        $model    = ! empty( $settings['model'] ) ? $settings['model'] : 'ggpt-5';
 
         if ( empty( $api_key ) ) {
             return new WP_Error( 'missing_api_key', __( 'Falta la API key de OpenAI.', 'groui-smart-assistant' ) );

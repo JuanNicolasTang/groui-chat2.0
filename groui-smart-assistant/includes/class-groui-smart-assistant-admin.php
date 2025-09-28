@@ -154,8 +154,20 @@ class GROUI_Smart_Assistant_Admin {
     public function sanitize_settings( $settings ) {
         $sanitized = array();
         $sanitized['openai_api_key'] = isset( $settings['openai_api_key'] ) ? trim( sanitize_text_field( $settings['openai_api_key'] ) ) : '';
-        // Default to GPT‑5 if no model is provided.
-        $sanitized['model']          = isset( $settings['model'] ) ? trim( sanitize_text_field( $settings['model'] ) ) : 'gpt-5';
+
+        $model = isset( $settings['model'] ) ? sanitize_text_field( $settings['model'] ) : '';
+        $model = $this->normalize_model_value( $model );
+
+        $allowed_models = apply_filters(
+            'groui_smart_assistant_allowed_models',
+            array( 'gpt-5', 'gpt-5-mini', 'gpt-5-nano' )
+        );
+
+        if ( empty( $model ) || ( ! empty( $allowed_models ) && ! in_array( $model, $allowed_models, true ) ) ) {
+            $model = 'gpt-5';
+        }
+
+        $sanitized['model']        = $model;
         $sanitized['sitemap_url']    = isset( $settings['sitemap_url'] ) ? esc_url_raw( $settings['sitemap_url'] ) : home_url( '/sitemap.xml' );
         $sanitized['max_pages']      = isset( $settings['max_pages'] ) ? min( 50, max( 5, absint( $settings['max_pages'] ) ) ) : 12;
         $sanitized['max_products']   = isset( $settings['max_products'] ) ? min( 50, max( 5, absint( $settings['max_products'] ) ) ) : 12;
@@ -179,6 +191,26 @@ class GROUI_Smart_Assistant_Admin {
         if ( ! empty( $args['description'] ) ) {
             printf( '<p class="description">%s</p>', esc_html( $args['description'] ) );
         }
+    }
+
+    /**
+     * Normalize the model value to match OpenAI expectations.
+     *
+     * Converts to lowercase, replaces consecutive whitespace with hyphens and
+     * strips invalid characters so that values like "GPT 5 Mini" or
+     * " gPt-5 " end up as "gpt-5-mini".
+     *
+     * @param string $value Raw model value entered by the user.
+     *
+     * @return string Normalized model slug.
+     */
+    protected function normalize_model_value( $value ) {
+        $value = strtolower( trim( (string) $value ) );
+        $value = preg_replace( '/\s+/', '-', $value );
+        // Allow word characters, dots and hyphens.
+        $value = preg_replace( '/[^a-z0-9\-.]/', '', $value );
+
+        return $value;
     }
 
     /**

@@ -256,3 +256,34 @@
     requestProducts('');
   }
 })(jQuery);
+
+(function() {
+  const root = document.getElementById('groui-smart-assistant-root');
+  if (!root) return;
+  // Assign modern UI classes to existing elements
+  const launcher = root.querySelector('.groui-launcher');
+  if (launcher) launcher.classList.add('gsa-fab');
+  const panel = root.querySelector('.groui-chat-panel');
+  if (panel) panel.classList.add('gsa-window');
+  const header = panel ? panel.querySelector('.groui-chat-header') : null;
+  if (header) header.classList.add('gsa-header');
+  const messages = panel ? panel.querySelector('.groui-messages') : null;
+  if (messages) messages.classList.add('gsa-messages');
+  const inputBar = panel ? panel.querySelector('.groui-input-area') : null;
+  if (inputBar) inputBar.classList.add('gsa-inputbar');
+  const textarea = inputBar ? inputBar.querySelector('textarea') : null;
+  if (textarea) {
+    textarea.classList.add('gsa-input');
+  }
+  const sendBtn = inputBar ? inputBar.querySelector('button') : null;
+  if (sendBtn) sendBtn.classList.add('gsa-send');
+  const carousel = panel ? panel.querySelector('.groui-carousel') : null;
+  if (carousel) carousel.classList.add('gsa-products');
+  // Automatically scroll to bottom when new messages are added
+  const scrollToEnd = () => {
+    if (messages) messages.scrollTop = messages.scrollHeight;
+  };
+  const observer = new MutationObserver(scrollToEnd);
+  if (messages) observer.observe(messages, { childList: true, subtree: true });
+  scrollToEnd();
+})();

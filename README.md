@@ -4,7 +4,7 @@ Este repositorio contiene el plugin de WordPress **GROUI Smart Assistant**, un
 
 ## Características principales
 
-* **Asistente inteligente** – Un chatbot flotante, moderno y oscuro que utiliza la API de OpenAI (configurable, por defecto `gpt-5.1`) para entender las preguntas de los usuarios y responder con contexto del sitio.
+* **Asistente inteligente** – Un chatbot flotante, moderno y oscuro que utiliza la API de OpenAI (configurable, por defecto `gpt-5`) para entender las preguntas de los usuarios y responder con contexto del sitio.
 * **Integración con WooCommerce** – Recomienda productos relevantes y los muestra en un carrusel interactivo si WooCommerce está instalado y activo.
 * **Indexación de contenido** – Construye un contexto basado en páginas, categorías, FAQs, productos y el sitemap público del sitio para que el modelo disponga de la mayor cantidad de información posible.
 * **Panel de ajustes** – Permite configurar la clave de API de OpenAI, el modelo a utilizar y los límites de indexación (páginas y productos) desde el área de administración de WordPress.

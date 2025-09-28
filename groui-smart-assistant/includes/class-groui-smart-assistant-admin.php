@@ -80,7 +80,8 @@ class GROUI_Smart_Assistant_Admin {
             'groui_smart_assistant_general',
             array(
                 'id'          => 'model',
-                'description' => __( 'Por defecto: gpt‑5.1', 'groui-smart-assistant' ),
+                // Provide guidance on the default OpenAI model.  Use GPT‑5 unless overridden.
+                'description' => __( 'Por defecto: gpt‑5', 'groui-smart-assistant' ),
             )
         );
 
@@ -153,7 +154,8 @@ class GROUI_Smart_Assistant_Admin {
     public function sanitize_settings( $settings ) {
         $sanitized = array();
         $sanitized['openai_api_key'] = isset( $settings['openai_api_key'] ) ? trim( sanitize_text_field( $settings['openai_api_key'] ) ) : '';
-        $sanitized['model']          = isset( $settings['model'] ) ? trim( sanitize_text_field( $settings['model'] ) ) : 'gpt-5.1';
+        // Default to GPT‑5 if no model is provided.
+        $sanitized['model']          = isset( $settings['model'] ) ? trim( sanitize_text_field( $settings['model'] ) ) : 'gpt-5';
         $sanitized['sitemap_url']    = isset( $settings['sitemap_url'] ) ? esc_url_raw( $settings['sitemap_url'] ) : home_url( '/sitemap.xml' );
         $sanitized['max_pages']      = isset( $settings['max_pages'] ) ? min( 50, max( 5, absint( $settings['max_pages'] ) ) ) : 12;
         $sanitized['max_products']   = isset( $settings['max_products'] ) ? min( 50, max( 5, absint( $settings['max_products'] ) ) ) : 12;

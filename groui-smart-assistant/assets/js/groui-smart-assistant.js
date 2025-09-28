@@ -58,19 +58,21 @@
             </button>
           </div>
         </header>
-        <div class="gsa-messages" data-scroll></div>
-        <section class="gsa-products gsa-hidden" data-products-section>
-          <div class="gsa-products__header">
-            <h4>Recomendaciones destacadas</h4>
-            <button type="button" class="gsa-btn gsa-btn--ghost" data-refresh-secondary>
-              <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <path d="M4.5 4.5a6.5 6.5 0 0 1 11 3.5h1.5a.5.5 0 0 1 .4.8l-2.3 3a.5.5 0 0 1-.8 0l-2.3-3a.5.5 0 0 1 .4-.8H14a5 5 0 0 0-9-2.7.75.75 0 0 1-1.24-.83l.74-1.17Zm11 11a6.5 6.5 0 0 1-11-3.5H3a.5.5 0 0 1-.4-.8l2.3-3a.5.5 0 0 1 .8 0l2.3 3a.5.5 0 0 1-.4.8H6a5 5 0 0 0 9 2.7.75.75 0 0 1 1.24.83l-.74 1.17Z" fill="currentColor"/>
-              </svg>
-              <span>Actualizar</span>
-            </button>
-          </div>
-          <div class="gsa-products__grid" data-products-grid></div>
-        </section>
+        <div class="gsa-messages" data-scroll>
+          <div class="gsa-messages__list" data-messages></div>
+          <section class="gsa-products gsa-hidden" data-products-section>
+            <div class="gsa-products__header">
+              <h4>Recomendaciones destacadas</h4>
+              <button type="button" class="gsa-btn gsa-btn--ghost" data-refresh-secondary>
+                <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M4.5 4.5a6.5 6.5 0 0 1 11 3.5h1.5a.5.5 0 0 1 .4.8l-2.3 3a.5.5 0 0 1-.8 0l-2.3-3a.5.5 0 0 1 .4-.8H14a5 5 0 0 0-9-2.7.75.75 0 0 1-1.24-.83l.74-1.17Zm11 11a6.5 6.5 0 0 1-11-3.5H3a.5.5 0 0 1-.4-.8l2.3-3a.5.5 0 0 1 .8 0l2.3 3a.5.5 0 0 1-.4.8H6a5 5 0 0 0 9 2.7.75.75 0 0 1 1.24.83l-.74 1.17Z" fill="currentColor"/>
+                </svg>
+                <span>Actualizar</span>
+              </button>
+            </div>
+            <div class="gsa-products__grid" data-products-grid></div>
+          </section>
+        </div>
         <form class="gsa-inputbar" data-form>
           <label for="gsa-message" class="gsa-visually-hidden">Escribe tu mensaje</label>
           <textarea id="gsa-message" class="gsa-input" name="message" rows="2" placeholder="Cuéntame qué necesitas…" required></textarea>
@@ -147,8 +149,12 @@
     }
   }
 
+  function getMessagesContainer() {
+    return root.querySelector('[data-messages]') || root.querySelector('[data-scroll]');
+  }
+
   function renderMessage(message) {
-    const container = root.querySelector('[data-scroll]');
+    const container = getMessagesContainer();
     if (!container) {
       return;
     }
@@ -191,7 +197,7 @@
     if (typingNode) {
       return;
     }
-    const container = root.querySelector('[data-scroll]');
+    const container = getMessagesContainer();
     if (!container) {
       return;
     }
@@ -287,6 +293,8 @@
         `;
       })
       .join('');
+
+    scrollMessages();
   }
 
   function requestProducts(query) {
@@ -330,10 +338,14 @@
           pushAssistantMessage(response.data.answer);
         }
 
-        if (response.data.productCards) {
-          renderProducts(response.data.productCards);
-        } else if (state.hasWooCommerce) {
-          requestProducts(content);
+        if (
+          state.hasWooCommerce &&
+          Object.prototype.hasOwnProperty.call(response.data, 'productCards')
+        ) {
+          const cards = Array.isArray(response.data.productCards)
+            ? response.data.productCards
+            : [];
+          renderProducts(cards);
         }
       })
       .fail((jqXHR) => {
@@ -402,7 +414,5 @@
   bindEvents();
   togglePanel(false);
 
-  if (state.hasWooCommerce) {
-    requestProducts('');
-  }
+  // Product recommendations are now opt-in via the refresh button or explicit assistant responses.
 })(jQuery);

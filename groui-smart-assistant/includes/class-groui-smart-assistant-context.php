@@ -87,6 +87,7 @@ class GROUI_Smart_Assistant_Context {
             'enable_debug'   => false,
             'max_pages'      => 12,
             'max_products'   => 12,
+            'deep_context_mode' => false,
         );
 
         // Merge stored options with defaults, falling back when keys are missing.

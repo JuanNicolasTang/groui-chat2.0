@@ -64,7 +64,7 @@ class GROUI_Smart_Assistant_Context {
             'sitemap'    => $this->get_sitemap_summary( $settings ),
             'pages'      => $this->get_page_summaries( $settings['max_pages'] ),
             'faqs'       => $this->get_faqs_from_content(),
-            'products'   => $this->get_product_summaries( $settings['max_products'] ),
+            'products'   => $this->get_product_summaries( $settings['max_products'], $settings ),
             'categories' => $this->get_taxonomy_summaries(),
         );
 
@@ -87,6 +87,7 @@ class GROUI_Smart_Assistant_Context {
             'enable_debug'   => false,
             'max_pages'      => 12,
             'max_products'   => 12,
+            'deep_context_mode' => false,
         );
 
         // Merge stored options with defaults, falling back when keys are missing.
@@ -317,39 +318,130 @@ class GROUI_Smart_Assistant_Context {
     /**
      * Gather WooCommerce product summaries.
      *
-     * @param int $limit Number of products to include.
+     * @param int   $limit    Número de productos a incluir cuando el contexto se refina por relevancia.
+     * @param array $settings Ajustes del plugin, usados para detectar el modo de contexto completo.
      *
      * @return array List of product summaries with keys such as `id`, `name`, `price`, `permalink`, `image`, `short_desc`, `categories` and `category_names`.
      */
-    protected function get_product_summaries( $limit ) {
+    protected function get_product_summaries( $limit, $settings = array() ) {
         if ( ! class_exists( 'WooCommerce' ) ) {
             return array();
         }
 
-        $products = wc_get_products( array(
+        $settings          = wp_parse_args( $settings, array( 'deep_context_mode' => false ) );
+        $use_full_context  = ! empty( $settings['deep_context_mode'] );
+        $limit             = max( 0, absint( $limit ) );
+
+        /**
+         * Adjust the number of products indexed when the assistant recorta por relevancia.
+         *
+         * @param int   $limit            Limit requested via plugin settings.
+         * @param array $settings         Plugin settings array.
+         * @param bool  $use_full_context Whether full-context mode is active.
+         */
+        $limit = apply_filters( 'groui_smart_assistant_context_product_limit', $limit, $settings, $use_full_context );
+        $limit = max( 0, absint( $limit ) );
+        $query_args        = array(
             'status'  => 'publish',
-            'limit'   => absint( $limit ),
             'orderby' => 'date',
             'order'   => 'DESC',
-        ) );
+        );
+
+        if ( $use_full_context ) {
+            /**
+             * Define a safety cap when the full WooCommerce catálogo is indexed.
+             *
+             * Return -1 (default) to cargar todos los productos publicados o un entero positivo para limitar la cifra.
+             *
+             * @param int   $max_catalog Maximum number of products to include, -1 for unlimited.
+             * @param array $settings    Plugin settings array.
+             */
+            $max_catalog = apply_filters( 'groui_smart_assistant_context_maximum_products', -1, $settings );
+            $max_catalog = (int) $max_catalog;
+
+            if ( 0 === $max_catalog ) {
+                return array();
+            }
+
+            $query_args['limit'] = ( $max_catalog > 0 ) ? absint( $max_catalog ) : -1;
+        } else {
+            if ( $limit < 1 ) {
+                $limit = 12;
+            }
+
+            $query_args['limit'] = $limit;
+        }
+
+        /**
+         * Filter the arguments passed to `wc_get_products()` when building the contexto de WooCommerce.
+         *
+         * @param array $query_args       Default WooCommerce query arguments.
+         * @param array $settings         Plugin settings array.
+         * @param bool  $use_full_context Whether full-context mode is active.
+         */
+        $query_args = apply_filters( 'groui_smart_assistant_context_product_query_args', $query_args, $settings, $use_full_context );
+
+        $products = wc_get_products( $query_args );
+
+        if ( isset( $products['products'] ) && is_array( $products['products'] ) ) {
+            $product_objects = $products['products'];
+        } else {
+            $product_objects = $products;
+        }
+
+        if ( ! $use_full_context && $limit > 0 && count( $product_objects ) > $limit ) {
+            $product_objects = array_slice( $product_objects, 0, $limit );
+        }
+
+        if ( $use_full_context ) {
+            $max_catalog = isset( $max_catalog ) ? $max_catalog : -1;
+
+            if ( $max_catalog > 0 && count( $product_objects ) > $max_catalog ) {
+                $product_objects = array_slice( $product_objects, 0, $max_catalog );
+            }
+        }
 
         $summaries = array();
-        foreach ( $products as $product ) {
-            $category_ids = array_map( 'intval', $product->get_category_ids() );
 
-            $summaries[] = array(
-                'id'             => $product->get_id(),
-                'name'           => $product->get_name(),
-                'price'          => wp_strip_all_tags( $product->get_price_html() ),
-                'permalink'      => $product->get_permalink(),
-                'image'          => wp_get_attachment_image_url( $product->get_image_id(), 'medium' ),
-                'short_desc'     => wp_trim_words( wp_strip_all_tags( $product->get_short_description() ), 30 ),
-                'categories'     => $category_ids,
-                'category_names' => $this->get_product_category_names( $category_ids ),
-            );
+        foreach ( $product_objects as $product ) {
+            if ( ! $product || ! is_object( $product ) ) {
+                continue;
+            }
+
+            $summary = $this->build_product_summary( $product );
+
+            if ( ! empty( $summary ) ) {
+                $summaries[] = $summary;
+            }
         }
 
         return $summaries;
+    }
+
+    /**
+     * Build a summary for a WooCommerce product.
+     *
+     * @param WC_Product $product Product object to summarise.
+     *
+     * @return array Summary data ready to be stored in the assistant context.
+     */
+    protected function build_product_summary( $product ) {
+        if ( ! is_a( $product, 'WC_Product' ) ) {
+            return array();
+        }
+
+        $category_ids = array_map( 'intval', $product->get_category_ids() );
+
+        return array(
+            'id'             => $product->get_id(),
+            'name'           => $product->get_name(),
+            'price'          => wp_strip_all_tags( $product->get_price_html() ),
+            'permalink'      => $product->get_permalink(),
+            'image'          => wp_get_attachment_image_url( $product->get_image_id(), 'medium' ),
+            'short_desc'     => wp_trim_words( wp_strip_all_tags( $product->get_short_description() ), 30 ),
+            'categories'     => $category_ids,
+            'category_names' => $this->get_product_category_names( $category_ids ),
+        );
     }
 
     /**

@@ -102,14 +102,44 @@ class GROUI_Smart_Assistant_Context {
      */
     protected function get_sitemap_summary( $settings ) {
         $sitemap_url = ! empty( $settings['sitemap_url'] ) ? esc_url_raw( $settings['sitemap_url'] ) : home_url( '/sitemap.xml' );
-        $response    = wp_remote_get( $sitemap_url, array( 'timeout' => 15 ) );
+
+        $timeout = absint( apply_filters( 'groui_smart_assistant_sitemap_timeout', 45, $settings ) );
+        if ( $timeout < 15 ) {
+            $timeout = 15;
+        }
+
+        $response_limit = absint( apply_filters( 'groui_smart_assistant_sitemap_response_limit', 1024 * 1024, $settings ) );
+        if ( $response_limit < 50 * 1024 ) {
+            $response_limit = 50 * 1024;
+        }
+
+        $request_args = apply_filters(
+            'groui_smart_assistant_sitemap_request_args',
+            array(
+                'timeout'             => $timeout,
+                'limit_response_size' => $response_limit,
+            ),
+            $settings
+        );
+
+        $response = wp_remote_get( $sitemap_url, $request_args );
 
         if ( is_wp_error( $response ) ) {
+            if ( ! empty( $settings['enable_debug'] ) ) {
+                $this->log_debug(
+                    sprintf( 'Sitemap request failed for %s: %s', $sitemap_url, $response->get_error_message() ),
+                    $response->get_error_data(),
+                    $settings
+                );
+            }
             return array();
         }
 
         $body = wp_remote_retrieve_body( $response );
         if ( empty( $body ) ) {
+            if ( ! empty( $settings['enable_debug'] ) ) {
+                $this->log_debug( sprintf( 'Sitemap request returned empty body for %s', $sitemap_url ), null, $settings );
+            }
             return array();
         }
 
@@ -118,10 +148,22 @@ class GROUI_Smart_Assistant_Context {
         libxml_clear_errors();
 
         if ( ! $xml ) {
-            return array();
+            if ( ! empty( $settings['enable_debug'] ) ) {
+                $this->log_debug( 'Failed to parse sitemap XML, attempting fallback parser.', null, $settings );
+            }
+
+            $urls = $this->parse_sitemap_fallback( $body, $settings );
+
+            if ( empty( $urls ) && ! empty( $settings['enable_debug'] ) ) {
+                $this->log_debug( 'Fallback parser did not extract sitemap entries.', null, $settings );
+            }
+
+            return $urls;
         }
 
         $urls = array();
+        $max_entries = max( 1, absint( apply_filters( 'groui_smart_assistant_sitemap_max_entries', 20, $settings ) ) );
+
         foreach ( $xml->url as $entry ) {
             $loc = isset( $entry->loc ) ? (string) $entry->loc : '';
             if ( empty( $loc ) ) {
@@ -133,12 +175,83 @@ class GROUI_Smart_Assistant_Context {
                 'lastmod' => isset( $entry->lastmod ) ? (string) $entry->lastmod : '',
             );
 
-            if ( count( $urls ) >= 20 ) {
+            if ( count( $urls ) >= $max_entries ) {
                 break;
             }
         }
 
         return $urls;
+    }
+
+    /**
+     * Fallback parser for sitemap XML when SimpleXML cannot handle the response.
+     *
+     * Attempts to extract <url> entries using regular expressions and a very
+     * small custom parser so that a truncated or partial response (which is
+     * common when limiting the download size) still yields useful data.
+     *
+     * @param string $body      Raw sitemap body.
+     * @param array  $settings  Plugin settings array.
+     *
+     * @return array List of sitemap summaries.
+     */
+    protected function parse_sitemap_fallback( $body, $settings ) {
+        $max_entries = max( 1, absint( apply_filters( 'groui_smart_assistant_sitemap_max_entries', 20, $settings ) ) );
+
+        if ( ! preg_match_all( '/<url>(.*?)<\/url>/is', $body, $matches ) ) {
+            return array();
+        }
+
+        $urls = array();
+
+        foreach ( $matches[1] as $chunk ) {
+            if ( ! preg_match( '/<loc>\s*([^<]+)\s*<\/loc>/i', $chunk, $loc_match ) ) {
+                continue;
+            }
+
+            $entry = array(
+                'url' => trim( $loc_match[1] ),
+            );
+
+            if ( preg_match( '/<lastmod>\s*([^<]+)\s*<\/lastmod>/i', $chunk, $lastmod_match ) ) {
+                $entry['lastmod'] = trim( $lastmod_match[1] );
+            } else {
+                $entry['lastmod'] = '';
+            }
+
+            $urls[] = $entry;
+
+            if ( count( $urls ) >= $max_entries ) {
+                break;
+            }
+        }
+
+        return $urls;
+    }
+
+    /**
+     * Log debug information when the feature is enabled.
+     *
+     * @param string     $message  Message to write to the debug log.
+     * @param mixed      $context  Optional context data.
+     * @param array|null $settings Plugin settings array.
+     *
+     * @return void
+     */
+    protected function log_debug( $message, $context = null, $settings = null ) {
+        if ( null === $settings ) {
+            $settings = $this->get_settings();
+        }
+
+        if ( empty( $settings['enable_debug'] ) ) {
+            return;
+        }
+
+        if ( null !== $context ) {
+            $message .= ' ' . wp_json_encode( $context );
+        }
+
+        error_log( '[GROUI Smart Assistant] ' . $message );
     }
 
     /**

@@ -140,6 +140,19 @@ class GROUI_Smart_Assistant_Admin {
                 'description' => __( 'Registra información adicional en el log.', 'groui-smart-assistant' ),
             )
         );
+
+        // Deep context toggle.
+        add_settings_field(
+            'deep_context_mode',
+            __( 'Modo de contexto completo', 'groui-smart-assistant' ),
+            array( $this, 'render_checkbox_field' ),
+            'groui-smart-assistant',
+            'groui_smart_assistant_general',
+            array(
+                'id'          => 'deep_context_mode',
+                'description' => __( 'Envía siempre todo el contexto recopilado al modelo (consume más tokens).', 'groui-smart-assistant' ),
+            )
+        );
     }
 
     /**
@@ -172,6 +185,7 @@ class GROUI_Smart_Assistant_Admin {
         $sanitized['max_pages']      = isset( $settings['max_pages'] ) ? min( 50, max( 5, absint( $settings['max_pages'] ) ) ) : 12;
         $sanitized['max_products']   = isset( $settings['max_products'] ) ? min( 50, max( 5, absint( $settings['max_products'] ) ) ) : 12;
         $sanitized['enable_debug']   = ! empty( $settings['enable_debug'] );
+        $sanitized['deep_context_mode'] = ! empty( $settings['deep_context_mode'] );
 
         // Flush cached context whenever settings change.
         delete_transient( GROUI_Smart_Assistant::CONTEXT_TRANSIENT );

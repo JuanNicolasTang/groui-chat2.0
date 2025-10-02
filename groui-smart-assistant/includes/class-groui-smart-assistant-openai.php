@@ -47,6 +47,7 @@ class GROUI_Smart_Assistant_OpenAI {
             return new WP_Error( 'missing_api_key', __( 'Falta la API key de OpenAI.', 'groui-smart-assistant' ) );
         }
 
+        $context       = $this->refine_context_for_message( $message, $context );
         $system_prompt = $this->build_system_prompt( $context );
 
         $body = array(
@@ -155,6 +156,282 @@ class GROUI_Smart_Assistant_OpenAI {
 
         // Use real newlines within the string to avoid double escaping.
         return $instructions . "\n\nContexto:\n" . $summary_text;
+    }
+
+    /**
+     * Reduce the provided context to the entries most relevant to the message.
+     *
+     * Applies lightweight keyword scoring so the OpenAI prompt contains the
+     * pages, products, FAQs and categories that best match the user request.
+     * The resulting subset keeps the original order as a tiebreaker to avoid
+     * destabilising the prompt when there are no obvious matches.
+     *
+     * @param string $message User message.
+     * @param array  $context Full site context array.
+     *
+     * @return array Refined context.
+     */
+    protected function refine_context_for_message( $message, $context ) {
+        $tokens = $this->tokenize_text( $message );
+
+        /**
+         * Filter the set of query tokens extracted from the user message.
+         *
+         * @param array  $tokens  Normalised unique tokens.
+         * @param string $message Original user message.
+         * @param array  $context Full site context.
+         */
+        $tokens = apply_filters( 'groui_smart_assistant_query_tokens', $tokens, $message, $context );
+
+        if ( empty( $tokens ) ) {
+            return $context;
+        }
+
+        $refined = $context;
+
+        if ( ! empty( $context['pages'] ) && is_array( $context['pages'] ) ) {
+            $limit = apply_filters( 'groui_smart_assistant_max_relevant_pages', 8, $message, $context, $tokens );
+            $refined['pages'] = $this->filter_entries_by_tokens(
+                $context['pages'],
+                $tokens,
+                array(
+                    'title'   => 3,
+                    'excerpt' => 1,
+                ),
+                $limit
+            );
+        }
+
+        if ( ! empty( $context['faqs'] ) && is_array( $context['faqs'] ) ) {
+            $limit = apply_filters( 'groui_smart_assistant_max_relevant_faqs', 10, $message, $context, $tokens );
+            $refined['faqs'] = $this->filter_entries_by_tokens(
+                $context['faqs'],
+                $tokens,
+                array(
+                    'question' => 2,
+                ),
+                $limit
+            );
+        }
+
+        if ( ! empty( $context['products'] ) && is_array( $context['products'] ) ) {
+            $limit = apply_filters( 'groui_smart_assistant_max_relevant_products', 8, $message, $context, $tokens );
+            $refined['products'] = $this->filter_entries_by_tokens(
+                $context['products'],
+                $tokens,
+                array(
+                    'name'           => 5,
+                    'short_desc'     => 2,
+                    'category_names' => 2,
+                ),
+                $limit
+            );
+        }
+
+        if ( ! empty( $context['categories'] ) && is_array( $context['categories'] ) ) {
+            $filtered_categories = array();
+
+            foreach ( $context['categories'] as $taxonomy => $terms ) {
+                if ( empty( $terms ) || ! is_array( $terms ) ) {
+                    continue;
+                }
+
+                $limit = apply_filters( 'groui_smart_assistant_max_relevant_terms', 6, $taxonomy, $message, $context, $tokens );
+                $filtered_terms = $this->filter_entries_by_tokens(
+                    $terms,
+                    $tokens,
+                    array(
+                        'name'        => 3,
+                        'description' => 1,
+                    ),
+                    $limit
+                );
+
+                if ( ! empty( $filtered_terms ) ) {
+                    $filtered_categories[ $taxonomy ] = $filtered_terms;
+                }
+            }
+
+            if ( ! empty( $filtered_categories ) ) {
+                $refined['categories'] = $filtered_categories;
+            }
+        }
+
+        if ( ! empty( $context['sitemap'] ) && is_array( $context['sitemap'] ) ) {
+            $limit = apply_filters( 'groui_smart_assistant_max_relevant_sitemap', 6, $message, $context, $tokens );
+            $refined['sitemap'] = $this->filter_entries_by_tokens(
+                $context['sitemap'],
+                $tokens,
+                array(
+                    'url'     => 2,
+                    'lastmod' => 1,
+                ),
+                $limit
+            );
+        }
+
+        /**
+         * Filter the refined context before it is converted into the system prompt.
+         *
+         * @param array  $refined Refined context array.
+         * @param array  $context Original full context array.
+         * @param string $message User message.
+         * @param array  $tokens  Tokens extracted from the user message.
+         */
+        return apply_filters( 'groui_smart_assistant_refined_context', $refined, $context, $message, $tokens );
+    }
+
+    /**
+     * Tokenize a string into lowercase alphanumeric terms.
+     *
+     * @param string $text Raw text.
+     *
+     * @return array Unique tokens.
+     */
+    protected function tokenize_text( $text ) {
+        $normalized = $this->normalize_text( $text );
+
+        if ( '' === $normalized ) {
+            return array();
+        }
+
+        $parts = preg_split( '/\s+/', $normalized );
+        $parts = array_filter(
+            array_map( 'trim', $parts ),
+            static function( $token ) {
+                return strlen( $token ) > 2;
+            }
+        );
+
+        return array_values( array_unique( $parts ) );
+    }
+
+    /**
+     * Normalise text for token comparisons.
+     *
+     * @param string $text Input string.
+     *
+     * @return string Normalised text.
+     */
+    protected function normalize_text( $text ) {
+        $text = wp_strip_all_tags( (string) $text );
+
+        if ( function_exists( 'remove_accents' ) ) {
+            $text = remove_accents( $text );
+        }
+
+        $text = strtolower( $text );
+        $text = preg_replace( '/[^a-z0-9\s]+/u', ' ', $text );
+        $text = preg_replace( '/\s+/', ' ', $text );
+
+        return trim( $text );
+    }
+
+    /**
+     * Score an array of entries using keyword overlap.
+     *
+     * @param array $entries    Entries to score.
+     * @param array $tokens     Query tokens.
+     * @param array $field_map  Field weight map.
+     * @param int   $limit      Maximum number of entries to keep.
+     *
+     * @return array Filtered entries ordered by relevance.
+     */
+    protected function filter_entries_by_tokens( $entries, $tokens, $field_map, $limit ) {
+        $limit = max( 1, absint( $limit ) );
+        $scored = array();
+        $max    = 0;
+
+        foreach ( $entries as $index => $entry ) {
+            if ( ! is_array( $entry ) ) {
+                continue;
+            }
+
+            $score = 0;
+
+            foreach ( $field_map as $field => $weight ) {
+                if ( empty( $entry[ $field ] ) ) {
+                    continue;
+                }
+
+                $score += (float) $weight * $this->calculate_overlap_score( $tokens, $entry[ $field ] );
+            }
+
+            $max = max( $max, $score );
+
+            $scored[] = array(
+                'entry' => $entry,
+                'score' => $score,
+                'index' => $index,
+            );
+        }
+
+        if ( empty( $scored ) ) {
+            return array();
+        }
+
+        if ( $max <= 0 ) {
+            return array_slice( $entries, 0, $limit );
+        }
+
+        usort(
+            $scored,
+            static function( $a, $b ) {
+                if ( $a['score'] === $b['score'] ) {
+                    return $a['index'] <=> $b['index'];
+                }
+
+                return ( $a['score'] > $b['score'] ) ? -1 : 1;
+            }
+        );
+
+        $scored = array_slice( $scored, 0, $limit );
+
+        return array_map(
+            static function( $item ) {
+                return $item['entry'];
+            },
+            $scored
+        );
+    }
+
+    /**
+     * Calculate how strongly a set of tokens overlaps a text string.
+     *
+     * @param array  $tokens Tokens derived from the user query.
+     * @param string $text   Text to score against.
+     *
+     * @return float Overlap score.
+     */
+    protected function calculate_overlap_score( $tokens, $text ) {
+        if ( empty( $tokens ) ) {
+            return 0;
+        }
+
+        $normalized = $this->normalize_text( $text );
+
+        if ( '' === $normalized ) {
+            return 0;
+        }
+
+        $score = 0;
+
+        foreach ( $tokens as $token ) {
+            if ( '' === $token ) {
+                continue;
+            }
+
+            $pattern     = '/\b' . preg_quote( $token, '/' ) . '\b/u';
+            $occurrences = preg_match_all( $pattern, $normalized, $unused );
+
+            if ( false === $occurrences ) {
+                $occurrences = 0;
+            }
+
+            $score += $occurrences;
+        }
+
+        return $score;
     }
 
     /**

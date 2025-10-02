@@ -319,7 +319,7 @@ class GROUI_Smart_Assistant_Context {
      *
      * @param int $limit Number of products to include.
      *
-     * @return array List of product summaries with keys such as `id`, `name`, `price`, `permalink`, `image`, `short_desc` and `categories`.
+     * @return array List of product summaries with keys such as `id`, `name`, `price`, `permalink`, `image`, `short_desc`, `categories` and `category_names`.
      */
     protected function get_product_summaries( $limit ) {
         if ( ! class_exists( 'WooCommerce' ) ) {
@@ -335,18 +335,68 @@ class GROUI_Smart_Assistant_Context {
 
         $summaries = array();
         foreach ( $products as $product ) {
+            $category_ids = array_map( 'intval', $product->get_category_ids() );
+
             $summaries[] = array(
-                'id'         => $product->get_id(),
-                'name'       => $product->get_name(),
-                'price'      => wp_strip_all_tags( $product->get_price_html() ),
-                'permalink'  => $product->get_permalink(),
-                'image'      => wp_get_attachment_image_url( $product->get_image_id(), 'medium' ),
-                'short_desc' => wp_trim_words( wp_strip_all_tags( $product->get_short_description() ), 30 ),
-                'categories' => array_map( 'intval', $product->get_category_ids() ),
+                'id'             => $product->get_id(),
+                'name'           => $product->get_name(),
+                'price'          => wp_strip_all_tags( $product->get_price_html() ),
+                'permalink'      => $product->get_permalink(),
+                'image'          => wp_get_attachment_image_url( $product->get_image_id(), 'medium' ),
+                'short_desc'     => wp_trim_words( wp_strip_all_tags( $product->get_short_description() ), 30 ),
+                'categories'     => $category_ids,
+                'category_names' => $this->get_product_category_names( $category_ids ),
             );
         }
 
         return $summaries;
+    }
+
+    /**
+     * Retrieve product category names for the provided IDs.
+     *
+     * Results are cached in-memory for the duration of the request to avoid
+     * repeated lookups when many products share the same term.
+     *
+     * @param array $category_ids List of product category term IDs.
+     *
+     * @return array List of category names.
+     */
+    protected function get_product_category_names( $category_ids ) {
+        static $cache = array();
+
+        $names = array();
+
+        foreach ( $category_ids as $category_id ) {
+            $category_id = absint( $category_id );
+
+            if ( ! $category_id ) {
+                continue;
+            }
+
+            if ( ! array_key_exists( $category_id, $cache ) ) {
+                $term = get_term( $category_id, 'product_cat' );
+
+                if ( $term && ! is_wp_error( $term ) ) {
+                    if ( is_object( $term ) && is_a( $term, 'WP_Term' ) && isset( $term->name ) ) {
+                        $cache[ $category_id ] = $term->name;
+                    } elseif ( isset( $term->name ) ) {
+                        // Ensure compatibility with mocks that might not return WP_Term instances.
+                        $cache[ $category_id ] = (string) $term->name;
+                    } else {
+                        $cache[ $category_id ] = (string) $term;
+                    }
+                } else {
+                    $cache[ $category_id ] = '';
+                }
+            }
+
+            if ( ! empty( $cache[ $category_id ] ) ) {
+                $names[] = $cache[ $category_id ];
+            }
+        }
+
+        return $names;
     }
 
     /**

@@ -30,6 +30,7 @@ Tras activar el plugin, aparecerá un botón flotante en la esquina inferior der
 ## Filtros disponibles
 
 - `groui_smart_assistant_openai_request_args`: Permite modificar los argumentos enviados a `wp_remote_post()` antes de contactar con OpenAI. Úsalo para añadir cabeceras personalizadas o ajustar el `timeout` (por defecto 60 s) cuando necesites respuestas más largas sin editar el código del plugin.
+codex/add-filter-for-wp_remote_post-args-jp0hue
 - `groui_smart_assistant_use_full_context`: Te deja forzar (o desactivar) el modo de contexto completo desde código antes de construir el prompt, por ejemplo para habilitarlo solo a ciertos usuarios o en determinados tipos de petición.
 - `groui_smart_assistant_deep_context`: Última oportunidad para modificar el contexto cuando se envía completo al modelo.
 - `groui_smart_assistant_refined_context`: Sigue disponible para ajustar el subconjunto refinado (se invoca también cuando se usa el modo de contexto completo).
@@ -38,6 +39,7 @@ Tras activar el plugin, aparecerá un botón flotante en la esquina inferior der
 
 - En la página de ajustes encontrarás el checkbox **Modo de contexto completo**. Al activarlo, la IA recibirá todas las páginas, productos, FAQs, categorías y URLs recopiladas sin aplicar el recorte por relevancia, lo que ayuda a obtener respuestas más exhaustivas.
 - Si prefieres mantener el recorte pero con límites más altos, aumenta los campos **Máximo de páginas a indexar** y **Máximo de productos a indexar** desde los ajustes. Esos valores se usarán como límite por defecto al refinar el contexto.
+======= main
 
 ### Selección del modelo GPT-5
 

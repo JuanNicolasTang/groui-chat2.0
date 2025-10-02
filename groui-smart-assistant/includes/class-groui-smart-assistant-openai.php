@@ -76,16 +76,32 @@ class GROUI_Smart_Assistant_OpenAI {
          */
         $body = apply_filters( 'groui_smart_assistant_openai_body', $body, $message, $context );
 
+        $request_args = array(
+            'headers' => array(
+                'Content-Type'  => 'application/json',
+                'Authorization' => 'Bearer ' . $api_key,
+            ),
+            'timeout' => 60,
+            'body'    => wp_json_encode( $body ),
+        );
+
+        /**
+         * Filter the request arguments before sending to OpenAI.
+         *
+         * Developers can tweak headers, increase the timeout, or alter any
+         * other `wp_remote_post()` parameter via this filter. The default
+         * timeout is 60 seconds to accommodate longer running completions.
+         *
+         * @param array  $request_args HTTP request arguments passed to `wp_remote_post()`.
+         * @param array  $body         Prepared request payload that will be JSON encoded.
+         * @param string $message      Original user message.
+         * @param array  $context      Built site context.
+         */
+        $request_args = apply_filters( 'groui_smart_assistant_openai_request_args', $request_args, $body, $message, $context );
+
         $response = wp_remote_post(
             'https://api.openai.com/v1/chat/completions',
-            array(
-                'headers' => array(
-                    'Content-Type'  => 'application/json',
-                    'Authorization' => 'Bearer ' . $api_key,
-                ),
-                'timeout' => 30,
-                'body'    => wp_json_encode( $body ),
-            )
+            $request_args
         );
 
         if ( is_wp_error( $response ) ) {

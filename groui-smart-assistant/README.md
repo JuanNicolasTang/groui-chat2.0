@@ -27,6 +27,10 @@ Plugin de WordPress que crea un asistente flotante con una IA conectada a OpenAI
 
 Tras activar el plugin, aparecerá un botón flotante en la esquina inferior derecha del sitio. Haz clic para conversar con la IA, resolver dudas y recibir recomendaciones de productos basadas en WooCommerce.
 
+## Filtros disponibles
+
+- `groui_smart_assistant_openai_request_args`: Permite modificar los argumentos enviados a `wp_remote_post()` antes de contactar con OpenAI. Úsalo para añadir cabeceras personalizadas o ajustar el `timeout` (por defecto 60 s) cuando necesites respuestas más largas sin editar el código del plugin.
+
 ### Selección del modelo GPT-5
 
 - El campo **Modelo de OpenAI** acepta los modelos de la familia GPT-5 publicados por OpenAI: `gpt-5`, `gpt-5-mini` y `gpt-5-nano`.

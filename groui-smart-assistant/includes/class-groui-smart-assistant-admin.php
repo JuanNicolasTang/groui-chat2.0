@@ -108,9 +108,13 @@ class GROUI_Smart_Assistant_Admin {
             'groui_smart_assistant_general',
             array(
                 'id'          => 'max_pages',
+                // Allow the site owner to index all pages by entering 0.  A value of 0 (displayed as 0 in the UI) is
+                // stored internally as -1 and treated as unlimited.  When the limit is greater than zero the number
+                // entered will be used directly.  The min attribute remains -1 to allow the user to set unlimited.
                 'description' => __( 'Introduce 0 para enviar todas las páginas disponibles.', 'groui-smart-assistant' ),
                 'min'         => -1,
-                'max'         => 200,
+                // Step is kept to 1 to restrict input to integers.  The max attribute is intentionally omitted to avoid
+                // capping the user‑defined value in the browser.
                 'step'        => 1,
             )
         );
@@ -124,9 +128,10 @@ class GROUI_Smart_Assistant_Admin {
             'groui_smart_assistant_general',
             array(
                 'id'          => 'max_products',
+                // Allow unlimited product indexing when the value is 0 (internally stored as -1).  Removing the max
+                // attribute prevents the browser from capping the number of products that can be entered.
                 'description' => __( 'Introduce 0 para indexar todo el catálogo de WooCommerce.', 'groui-smart-assistant' ),
                 'min'         => -1,
-                'max'         => 200,
                 'step'        => 1,
             )
         );
@@ -276,11 +281,11 @@ class GROUI_Smart_Assistant_Admin {
      * @param mixed $value   Raw submitted value.
      * @param int   $default Default value when the field is empty.
      * @param int   $min     Minimum positive value allowed when the limit is active.
-     * @param int   $max     Maximum positive value allowed when the limit is active.
+     * @param int|null   $max     Maximum positive value allowed when the limit is active.  Null for no maximum.
      *
      * @return int Sanitized limit.
      */
-    protected function sanitize_limit_setting( $value, $default = -1, $min = 5, $max = 200 ) {
+    protected function sanitize_limit_setting( $value, $default = -1, $min = 1, $max = null ) {
         if ( null === $value || '' === $value ) {
             return (int) $default;
         }
@@ -296,14 +301,17 @@ class GROUI_Smart_Assistant_Admin {
         if ( is_numeric( $value ) ) {
             $value = (int) $value;
 
+            // A value of zero or a negative integer disables the limit and is stored as -1.
             if ( $value <= 0 ) {
                 return -1;
             }
 
+            // Apply maximum if defined; skip if $max is null.
             if ( null !== $max ) {
                 $value = min( (int) $max, $value );
             }
 
+            // Apply minimum positive value; ensures at least one item is returned when a limit is active.
             if ( null !== $min ) {
                 $value = max( (int) $min, $value );
             } else {

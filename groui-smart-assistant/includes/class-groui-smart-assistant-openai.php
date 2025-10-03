@@ -35,9 +35,10 @@ class GROUI_Smart_Assistant_OpenAI {
             array(
                 'openai_api_key'   => '',
                 'model'            => '',
-                'max_pages'        => 12,
-                'max_products'     => 12,
-                'deep_context_mode' => false,
+                'max_pages'        => 60,
+                'max_products'     => 60,
+                'max_posts'        => 60,
+                'deep_context_mode' => true,
             )
         );
 
@@ -202,12 +203,13 @@ class GROUI_Smart_Assistant_OpenAI {
      * @return string Fully composed system prompt.
      */
     protected function build_system_prompt( $context ) {
-        $instructions = __( 'Eres GROUI Smart Assistant, una IA entrenada con toda la información de este sitio. Usa los datos proporcionados para responder preguntas, guiar procesos de compra y recomendar productos de WooCommerce. Devuelve siempre una respuesta JSON con las claves "answer" (HTML amigable) y "products" (arreglo opcional de IDs de productos de WooCommerce que quieras resaltar). Cuando no tengas información suficiente, sé honesto.', 'groui-smart-assistant' );
+        $instructions = __( 'Eres GROUI Smart Assistant, una IA entrenada con toda la información de este sitio. Usa los datos proporcionados (páginas, entradas del blog, FAQs, productos de WooCommerce, categorías y el sitemap) para responder preguntas, guiar procesos de compra y recomendar cualquier elemento relevante. Devuelve siempre una respuesta JSON con las claves "answer" (HTML amigable) y "products" (arreglo opcional de IDs de productos de WooCommerce que quieras resaltar). Cuando no tengas información suficiente, sé honesto.', 'groui-smart-assistant' );
 
         $summary = array(
             'site'       => isset( $context['site'] ) ? $context['site'] : '',
             'tagline'    => isset( $context['tagline'] ) ? $context['tagline'] : '',
             'pages'      => isset( $context['pages'] ) ? $context['pages'] : array(),
+            'posts'      => isset( $context['posts'] ) ? $context['posts'] : array(),
             'faqs'       => isset( $context['faqs'] ) ? $context['faqs'] : array(),
             'products'   => isset( $context['products'] ) ? $context['products'] : array(),
             'categories' => isset( $context['categories'] ) ? $context['categories'] : array(),
@@ -237,8 +239,9 @@ class GROUI_Smart_Assistant_OpenAI {
         $settings = wp_parse_args(
             $settings,
             array(
-                'max_pages'    => 12,
-                'max_products' => 12,
+                'max_pages'    => 60,
+                'max_products' => 60,
+                'max_posts'    => 60,
             )
         );
 
@@ -270,6 +273,27 @@ class GROUI_Smart_Assistant_OpenAI {
                 array(
                     'title'   => 3,
                     'excerpt' => 1,
+                    'content' => 2,
+                ),
+                $limit
+            );
+        }
+
+        if ( ! empty( $context['posts'] ) && is_array( $context['posts'] ) ) {
+            $default_limit = $this->normalize_limit(
+                isset( $settings['max_posts'] ) ? $settings['max_posts'] : count( $context['posts'] ),
+                $context['posts']
+            );
+            $limit = apply_filters( 'groui_smart_assistant_max_relevant_posts', $default_limit, $message, $context, $tokens, $settings );
+            $refined['posts'] = $this->filter_entries_by_tokens(
+                $context['posts'],
+                $tokens,
+                array(
+                    'title'      => 3,
+                    'excerpt'    => 2,
+                    'content'    => 2,
+                    'categories' => 2,
+                    'tags'       => 1,
                 ),
                 $limit
             );
@@ -297,7 +321,10 @@ class GROUI_Smart_Assistant_OpenAI {
                 array(
                     'name'           => 5,
                     'short_desc'     => 2,
+                    'long_desc'      => 2,
                     'category_names' => 2,
+                    'tags'           => 1,
+                    'attributes'     => 1,
                 ),
                 $limit
             );
@@ -508,6 +535,8 @@ class GROUI_Smart_Assistant_OpenAI {
             return 0;
         }
 
+        $text = $this->flatten_text_value( $text );
+
         $normalized = $this->normalize_text( $text );
 
         if ( '' === $normalized ) {
@@ -532,6 +561,47 @@ class GROUI_Smart_Assistant_OpenAI {
         }
 
         return $score;
+    }
+
+    /**
+     * Flatten mixed values (arrays/objects/scalars) into a searchable string.
+     *
+     * @param mixed $value Raw value.
+     *
+     * @return string
+     */
+    protected function flatten_text_value( $value ) {
+        if ( is_array( $value ) ) {
+            $pieces = array();
+
+            foreach ( $value as $item ) {
+                $flattened = $this->flatten_text_value( $item );
+
+                if ( '' !== $flattened ) {
+                    $pieces[] = $flattened;
+                }
+            }
+
+            return implode( ' ', $pieces );
+        }
+
+        if ( is_object( $value ) ) {
+            if ( method_exists( $value, '__toString' ) ) {
+                return (string) $value;
+            }
+
+            return wp_json_encode( $value );
+        }
+
+        if ( is_bool( $value ) ) {
+            return $value ? 'true' : 'false';
+        }
+
+        if ( is_scalar( $value ) ) {
+            return (string) $value;
+        }
+
+        return '';
     }
 
     /**

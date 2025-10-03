@@ -187,13 +187,13 @@ class GROUI_Smart_Assistant_Context {
      */
     protected function get_settings() {
         $defaults = array(
-            'openai_api_key' => '',
-            'model'          => 'gpt-5.1',
-            'sitemap_url'    => home_url( '/sitemap.xml' ),
-            'enable_debug'   => false,
-            'max_pages'      => 60,
-            'max_products'   => 60,
-            'max_posts'      => 60,
+            'openai_api_key'   => '',
+            'model'            => 'gpt-5.1',
+            'sitemap_url'      => home_url( '/sitemap.xml' ),
+            'enable_debug'     => false,
+            'max_pages'        => -1,
+            'max_products'     => -1,
+            'max_posts'        => -1,
             'deep_context_mode' => true,
         );
 
@@ -372,7 +372,12 @@ class GROUI_Smart_Assistant_Context {
     protected function get_page_summaries( $limit, $settings = array() ) {
         $settings         = wp_parse_args( $settings, array( 'deep_context_mode' => false ) );
         $use_full_context = ! empty( $settings['deep_context_mode'] );
-        $limit            = max( 1, absint( $limit ) );
+        $limit            = (int) $limit;
+        $is_unlimited     = $limit <= 0;
+
+        if ( ! $is_unlimited ) {
+            $limit = max( 1, $limit );
+        }
 
         $query_args = array(
             'post_type'      => 'page',
@@ -381,7 +386,7 @@ class GROUI_Smart_Assistant_Context {
                 'menu_order' => 'ASC',
                 'date'       => 'DESC',
             ),
-            'posts_per_page' => $use_full_context ? 50 : min( 20, $limit ),
+            'posts_per_page' => ( $use_full_context || $is_unlimited ) ? 50 : min( 20, $limit ),
             'paged'          => 1,
         );
 
@@ -396,7 +401,7 @@ class GROUI_Smart_Assistant_Context {
 
         $per_page = isset( $query_args['posts_per_page'] ) ? absint( $query_args['posts_per_page'] ) : 0;
         if ( $per_page < 1 ) {
-            $per_page = $use_full_context ? 50 : min( 20, $limit );
+            $per_page = ( $use_full_context || $is_unlimited ) ? 50 : min( 20, $limit );
         }
         $query_args['posts_per_page'] = $per_page;
         $current_page                  = isset( $query_args['paged'] ) ? max( 1, absint( $query_args['paged'] ) ) : 1;
@@ -409,6 +414,8 @@ class GROUI_Smart_Assistant_Context {
             }
 
             $target_total = ( $max_pages > 0 ) ? $max_pages : PHP_INT_MAX;
+        } elseif ( $is_unlimited ) {
+            $target_total = PHP_INT_MAX;
         } else {
             $target_total = $limit;
         }
@@ -471,14 +478,19 @@ class GROUI_Smart_Assistant_Context {
     protected function get_post_summaries( $limit, $settings = array() ) {
         $settings         = wp_parse_args( $settings, array( 'deep_context_mode' => false ) );
         $use_full_context = ! empty( $settings['deep_context_mode'] );
-        $limit            = max( 1, absint( $limit ) );
+        $limit            = (int) $limit;
+        $is_unlimited     = $limit <= 0;
+
+        if ( ! $is_unlimited ) {
+            $limit = max( 1, $limit );
+        }
 
         $query_args = array(
             'post_type'      => 'post',
             'post_status'    => 'publish',
             'orderby'        => 'date',
             'order'          => 'DESC',
-            'posts_per_page' => $use_full_context ? 50 : min( 30, $limit ),
+            'posts_per_page' => ( $use_full_context || $is_unlimited ) ? 50 : min( 30, $limit ),
             'paged'          => 1,
         );
 
@@ -493,7 +505,7 @@ class GROUI_Smart_Assistant_Context {
 
         $per_page = isset( $query_args['posts_per_page'] ) ? absint( $query_args['posts_per_page'] ) : 0;
         if ( $per_page < 1 ) {
-            $per_page = $use_full_context ? 50 : min( 30, $limit );
+            $per_page = ( $use_full_context || $is_unlimited ) ? 50 : min( 30, $limit );
         }
         $query_args['posts_per_page'] = $per_page;
         $current_page                  = isset( $query_args['paged'] ) ? max( 1, absint( $query_args['paged'] ) ) : 1;
@@ -506,6 +518,8 @@ class GROUI_Smart_Assistant_Context {
             }
 
             $target_total = ( $max_posts > 0 ) ? $max_posts : PHP_INT_MAX;
+        } elseif ( $is_unlimited ) {
+            $target_total = PHP_INT_MAX;
         } else {
             $target_total = $limit;
         }
@@ -681,7 +695,8 @@ class GROUI_Smart_Assistant_Context {
 
         $settings         = wp_parse_args( $settings, array( 'deep_context_mode' => false ) );
         $use_full_context = ! empty( $settings['deep_context_mode'] );
-        $limit            = max( 0, absint( $limit ) );
+        $limit            = (int) $limit;
+        $is_unlimited     = $limit <= 0;
 
         /**
          * Adjust the number of products indexed when the assistant focuses on relevancy.
@@ -690,15 +705,17 @@ class GROUI_Smart_Assistant_Context {
          * @param array $settings         Plugin settings array.
          * @param bool  $use_full_context Whether full-context mode is active.
          */
-        $limit = apply_filters( 'groui_smart_assistant_context_product_limit', $limit, $settings, $use_full_context );
-        $limit = max( 0, absint( $limit ) );
+        $limit        = apply_filters( 'groui_smart_assistant_context_product_limit', $limit, $settings, $use_full_context );
+        $limit        = (int) $limit;
+        $is_unlimited = $is_unlimited || $limit <= 0;
+        $limit        = $is_unlimited ? 0 : max( 1, $limit );
 
         $query_args = array(
             'status'   => 'publish',
             'orderby'  => 'date',
             'order'    => 'DESC',
             'paginate' => true,
-            'limit'    => $use_full_context ? 50 : ( $limit > 0 ? min( $limit, 20 ) : 12 ),
+            'limit'    => ( $use_full_context || $is_unlimited ) ? 50 : min( $limit, 20 ),
             'page'     => 1,
         );
 
@@ -719,16 +736,10 @@ class GROUI_Smart_Assistant_Context {
             }
 
             $target_total = ( $max_catalog > 0 ) ? $max_catalog : PHP_INT_MAX;
+        } elseif ( $is_unlimited ) {
+            $target_total = PHP_INT_MAX;
         } else {
-            if ( $limit < 1 ) {
-                $limit = 12;
-            }
-
             $target_total = $limit;
-        }
-
-        if ( ! $use_full_context && $target_total <= 0 ) {
-            return array();
         }
 
         /**
@@ -742,7 +753,7 @@ class GROUI_Smart_Assistant_Context {
 
         $per_page = isset( $query_args['limit'] ) ? absint( $query_args['limit'] ) : 0;
         if ( $per_page < 1 ) {
-            $per_page = $use_full_context ? 50 : min( max( 1, $target_total ), 20 );
+            $per_page = ( $use_full_context || $is_unlimited ) ? 50 : min( max( 1, $target_total ), 20 );
         }
 
         $query_args['limit']    = $per_page;

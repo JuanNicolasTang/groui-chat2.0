@@ -107,9 +107,10 @@ class GROUI_Smart_Assistant_Admin {
             'groui_smart_assistant_general',
             array(
                 'id'          => 'max_pages',
-                'description' => __( 'Límite de páginas para el contexto.', 'groui-smart-assistant' ),
-                'min'         => 5,
+                'description' => __( 'Introduce 0 para enviar todas las páginas disponibles.', 'groui-smart-assistant' ),
+                'min'         => -1,
                 'max'         => 200,
+                'step'        => 1,
             )
         );
 
@@ -122,9 +123,10 @@ class GROUI_Smart_Assistant_Admin {
             'groui_smart_assistant_general',
             array(
                 'id'          => 'max_products',
-                'description' => __( 'Limita la cantidad de productos que se envían al modelo.', 'groui-smart-assistant' ),
-                'min'         => 5,
+                'description' => __( 'Introduce 0 para indexar todo el catálogo de WooCommerce.', 'groui-smart-assistant' ),
+                'min'         => -1,
                 'max'         => 200,
+                'step'        => 1,
             )
         );
 
@@ -182,8 +184,9 @@ class GROUI_Smart_Assistant_Admin {
 
         $sanitized['model']        = $model;
         $sanitized['sitemap_url']      = isset( $settings['sitemap_url'] ) ? esc_url_raw( $settings['sitemap_url'] ) : home_url( '/sitemap.xml' );
-        $sanitized['max_pages']        = isset( $settings['max_pages'] ) ? min( 200, max( 5, absint( $settings['max_pages'] ) ) ) : 12;
-        $sanitized['max_products']     = isset( $settings['max_products'] ) ? min( 200, max( 5, absint( $settings['max_products'] ) ) ) : 12;
+        $sanitized['max_pages']        = $this->sanitize_limit_setting( isset( $settings['max_pages'] ) ? $settings['max_pages'] : null, -1 );
+        $sanitized['max_products']     = $this->sanitize_limit_setting( isset( $settings['max_products'] ) ? $settings['max_products'] : null, -1 );
+        $sanitized['max_posts']        = $this->sanitize_limit_setting( isset( $settings['max_posts'] ) ? $settings['max_posts'] : null, -1 );
         $sanitized['enable_debug']   = ! empty( $settings['enable_debug'] );
         $sanitized['deep_context_mode'] = ! empty( $settings['deep_context_mode'] );
 
@@ -235,20 +238,81 @@ class GROUI_Smart_Assistant_Admin {
      */
     public function render_number_field( $args ) {
         $options = get_option( GROUI_Smart_Assistant::OPTION_KEY, array() );
-        $value   = isset( $options[ $args['id'] ] ) ? absint( $options[ $args['id'] ] ) : '';
-        $min     = isset( $args['min'] ) ? absint( $args['min'] ) : 0;
-        $max     = isset( $args['max'] ) ? absint( $args['max'] ) : 100;
+        $value = isset( $options[ $args['id'] ] ) ? intval( $options[ $args['id'] ] ) : '';
+
+        if ( -1 === $value ) {
+            $value = 0;
+        }
+
+        $min  = isset( $args['min'] ) ? (int) $args['min'] : null;
+        $max  = isset( $args['max'] ) ? (int) $args['max'] : null;
+        $step = isset( $args['step'] ) ? (int) $args['step'] : 1;
+
+        $attributes = '';
+        if ( null !== $min ) {
+            $attributes .= ' min="' . esc_attr( $min ) . '"';
+        }
+        if ( null !== $max ) {
+            $attributes .= ' max="' . esc_attr( $max ) . '"';
+        }
+
         printf(
-            '<input type="number" class="small-text" id="%1$s" name="%2$s[%1$s]" value="%3$s" min="%4$s" max="%5$s" />',
+            '<input type="number" class="small-text" id="%1$s" name="%2$s[%1$s]" value="%3$s"%4$s step="%5$s" />',
             esc_attr( $args['id'] ),
             esc_attr( GROUI_Smart_Assistant::OPTION_KEY ),
-            esc_attr( $value ),
-            esc_attr( $min ),
-            esc_attr( $max )
+            esc_attr( '' === $value ? '' : $value ),
+            $attributes,
+            esc_attr( max( 1, $step ) )
         );
         if ( ! empty( $args['description'] ) ) {
             printf( '<p class="description">%s</p>', esc_html( $args['description'] ) );
         }
+    }
+
+    /**
+     * Sanitize numeric limits allowing "0" or negative values to disable the cap.
+     *
+     * @param mixed $value   Raw submitted value.
+     * @param int   $default Default value when the field is empty.
+     * @param int   $min     Minimum positive value allowed when the limit is active.
+     * @param int   $max     Maximum positive value allowed when the limit is active.
+     *
+     * @return int Sanitized limit.
+     */
+    protected function sanitize_limit_setting( $value, $default = -1, $min = 5, $max = 200 ) {
+        if ( null === $value || '' === $value ) {
+            return (int) $default;
+        }
+
+        if ( is_string( $value ) ) {
+            $value = trim( $value );
+        }
+
+        if ( '' === $value ) {
+            return (int) $default;
+        }
+
+        if ( is_numeric( $value ) ) {
+            $value = (int) $value;
+
+            if ( $value <= 0 ) {
+                return -1;
+            }
+
+            if ( null !== $max ) {
+                $value = min( (int) $max, $value );
+            }
+
+            if ( null !== $min ) {
+                $value = max( (int) $min, $value );
+            } else {
+                $value = max( 1, $value );
+            }
+
+            return $value;
+        }
+
+        return (int) $default;
     }
 
     /**

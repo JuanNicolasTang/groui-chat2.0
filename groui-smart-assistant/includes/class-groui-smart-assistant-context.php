@@ -62,10 +62,16 @@ class GROUI_Smart_Assistant_Context {
             'site'       => get_bloginfo( 'name' ),
             'tagline'    => get_bloginfo( 'description' ),
             'sitemap'    => $this->get_sitemap_summary( $settings ),
+ codex/add-filter-for-wp_remote_post-args-zyr1kv
             'pages'      => $this->get_page_summaries( $settings['max_pages'], $settings ),
             'faqs'       => $this->get_faqs_from_content( $settings ),
             'products'   => $this->get_product_summaries( $settings['max_products'], $settings ),
             'categories' => $this->get_taxonomy_summaries( $settings ),
+            'pages'      => $this->get_page_summaries( $settings['max_pages'] ),
+            'faqs'       => $this->get_faqs_from_content(),
+            'products'   => $this->get_product_summaries( $settings['max_products'], $settings ),
+            'categories' => $this->get_taxonomy_summaries(),
+ main
         );
 
         // Cache the built context for one hour.

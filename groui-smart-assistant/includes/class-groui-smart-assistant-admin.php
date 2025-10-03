@@ -109,11 +109,7 @@ class GROUI_Smart_Assistant_Admin {
                 'id'          => 'max_pages',
                 'description' => __( 'Límite de páginas para el contexto.', 'groui-smart-assistant' ),
                 'min'         => 5,
- codex/add-filter-for-wp_remote_post-args-ru6ifg
-                'max'         => 1000,
-
                 'max'         => 200,
- main
             )
         );
 
@@ -128,11 +124,7 @@ class GROUI_Smart_Assistant_Admin {
                 'id'          => 'max_products',
                 'description' => __( 'Limita la cantidad de productos que se envían al modelo.', 'groui-smart-assistant' ),
                 'min'         => 5,
- codex/add-filter-for-wp_remote_post-args-ru6ifg
-                'max'         => 1000,
-
                 'max'         => 200,
- main
             )
         );
 
@@ -189,14 +181,9 @@ class GROUI_Smart_Assistant_Admin {
         }
 
         $sanitized['model']        = $model;
-        $sanitized['sitemap_url']    = isset( $settings['sitemap_url'] ) ? esc_url_raw( $settings['sitemap_url'] ) : home_url( '/sitemap.xml' );
- codex/add-filter-for-wp_remote_post-args-ru6ifg
-        $sanitized['max_pages']      = isset( $settings['max_pages'] ) ? min( 1000, max( 5, absint( $settings['max_pages'] ) ) ) : 12;
-        $sanitized['max_products']   = isset( $settings['max_products'] ) ? min( 1000, max( 5, absint( $settings['max_products'] ) ) ) : 12;
-
-        $sanitized['max_pages']      = isset( $settings['max_pages'] ) ? min( 200, max( 5, absint( $settings['max_pages'] ) ) ) : 12;
-        $sanitized['max_products']   = isset( $settings['max_products'] ) ? min( 200, max( 5, absint( $settings['max_products'] ) ) ) : 12;
- main
+        $sanitized['sitemap_url']      = isset( $settings['sitemap_url'] ) ? esc_url_raw( $settings['sitemap_url'] ) : home_url( '/sitemap.xml' );
+        $sanitized['max_pages']        = isset( $settings['max_pages'] ) ? min( 200, max( 5, absint( $settings['max_pages'] ) ) ) : 12;
+        $sanitized['max_products']     = isset( $settings['max_products'] ) ? min( 200, max( 5, absint( $settings['max_products'] ) ) ) : 12;
         $sanitized['enable_debug']   = ! empty( $settings['enable_debug'] );
         $sanitized['deep_context_mode'] = ! empty( $settings['deep_context_mode'] );
 

@@ -845,6 +845,7 @@ class GROUI_Smart_Assistant_Context {
             'long_desc'      => $this->prepare_long_form_content( $product->get_description(), $use_full_context ? 200 : 120 ),
             'categories'     => $category_ids,
             'category_names' => $this->get_product_category_names( $category_ids ),
+            'brand_names'    => $this->get_product_brand_names( $product->get_id() ),
             'tags'           => $this->get_product_tag_names( $product->get_id() ),
             'attributes'     => $this->get_product_attribute_summaries( $product ),
             'gallery'        => $this->get_product_gallery_images( $product ),
@@ -930,6 +931,69 @@ class GROUI_Smart_Assistant_Context {
                 array_map( 'sanitize_text_field', $terms )
             )
         );
+    }
+
+    /**
+     * Retrieve product brand names for a product ID.
+     *
+     * @param int $product_id WooCommerce product ID.
+     *
+     * @return array
+     */
+    protected function get_product_brand_names( $product_id ) {
+        $product_id = absint( $product_id );
+
+        if ( ! $product_id ) {
+            return array();
+        }
+
+        if ( ! function_exists( 'wc_get_product_terms' ) ) {
+            return array();
+        }
+
+        $taxonomies = array( 'product_brand', 'pwb-brand', 'brand' );
+
+        /**
+         * Filter the list of brand taxonomies used when collecting product brands.
+         *
+         * @param array $taxonomies Brand taxonomy slugs.
+         * @param int   $product_id WooCommerce product ID.
+         */
+        $taxonomies = apply_filters( 'groui_smart_assistant_product_brand_taxonomies', $taxonomies, $product_id );
+
+        $brands = array();
+
+        foreach ( $taxonomies as $taxonomy ) {
+            $taxonomy = sanitize_key( $taxonomy );
+
+            if ( empty( $taxonomy ) ) {
+                continue;
+            }
+
+            $terms = wc_get_product_terms( $product_id, $taxonomy, array( 'fields' => 'names' ) );
+
+            if ( is_wp_error( $terms ) || empty( $terms ) ) {
+                continue;
+            }
+
+            foreach ( $terms as $term_name ) {
+                $term_name = sanitize_text_field( $term_name );
+
+                if ( '' === $term_name ) {
+                    continue;
+                }
+
+                $brands[] = $term_name;
+            }
+        }
+
+        if ( empty( $brands ) ) {
+            return array();
+        }
+
+        $brands = array_values( array_unique( $brands ) );
+
+        return $brands;
     }
 
     /**
@@ -1091,7 +1155,7 @@ class GROUI_Smart_Assistant_Context {
         $settings         = wp_parse_args( $settings, array( 'deep_context_mode' => false ) );
         $use_full_context = ! empty( $settings['deep_context_mode'] );
 
-        $taxonomies = array( 'product_cat', 'product_tag', 'brand', 'category' );
+        $taxonomies = array( 'product_cat', 'product_tag', 'product_brand', 'pwb-brand', 'brand', 'category' );
 
         /**
          * Filter the list of taxonomies considered for summaries.

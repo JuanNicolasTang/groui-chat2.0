@@ -66,6 +66,7 @@ class GROUI_Smart_Assistant_Context {
                 'tagline'    => get_bloginfo( 'description' ),
                 'sitemap'    => $this->get_sitemap_summary( $settings ),
                 'pages'      => $this->get_page_summaries( $settings['max_pages'], $settings ),
+                'posts'      => $this->get_post_summaries( $settings['max_posts'], $settings ),
                 'faqs'       => $this->get_faqs_from_content( $settings ),
                 'products'   => $this->get_product_summaries( $settings['max_products'], $settings ),
                 'categories' => $this->get_taxonomy_summaries( $settings ),
@@ -93,6 +94,7 @@ class GROUI_Smart_Assistant_Context {
                 'tagline'    => get_bloginfo( 'description' ),
                 'sitemap'    => array(),
                 'pages'      => array(),
+                'posts'      => array(),
                 'faqs'       => array(),
                 'products'   => array(),
                 'categories' => array(),
@@ -189,9 +191,10 @@ class GROUI_Smart_Assistant_Context {
             'model'          => 'gpt-5.1',
             'sitemap_url'    => home_url( '/sitemap.xml' ),
             'enable_debug'   => false,
-            'max_pages'      => 12,
-            'max_products'   => 12,
-            'deep_context_mode' => false,
+            'max_pages'      => 60,
+            'max_products'   => 60,
+            'max_posts'      => 60,
+            'deep_context_mode' => true,
         );
 
         // Merge stored options with defaults, falling back when keys are missing.
@@ -436,7 +439,8 @@ class GROUI_Smart_Assistant_Context {
                 $summaries[] = array(
                     'title'   => $page->post_title,
                     'url'     => get_permalink( $page ),
-                    'excerpt' => wp_trim_words( wp_strip_all_tags( $page->post_content ), 55 ),
+                    'excerpt' => $this->prepare_long_form_content( $page->post_content, $use_full_context ? 160 : 80 ),
+                    'content' => $this->prepare_long_form_content( $page->post_content, $use_full_context ? 320 : 160 ),
                 );
 
                 if ( PHP_INT_MAX !== $target_total && count( $summaries ) >= $target_total ) {
@@ -445,6 +449,106 @@ class GROUI_Smart_Assistant_Context {
             }
 
             if ( count( $pages ) < $paged_args['posts_per_page'] ) {
+                break;
+            }
+
+            $current_page++;
+        }
+
+        wp_reset_postdata();
+
+        return $summaries;
+    }
+
+    /**
+     * Collect blog post summaries with taxonomy context.
+     *
+     * @param int   $limit    Number of posts to include when relevance filtering is enabled.
+     * @param array $settings Plugin settings array.
+     *
+     * @return array
+     */
+    protected function get_post_summaries( $limit, $settings = array() ) {
+        $settings         = wp_parse_args( $settings, array( 'deep_context_mode' => false ) );
+        $use_full_context = ! empty( $settings['deep_context_mode'] );
+        $limit            = max( 1, absint( $limit ) );
+
+        $query_args = array(
+            'post_type'      => 'post',
+            'post_status'    => 'publish',
+            'orderby'        => 'date',
+            'order'          => 'DESC',
+            'posts_per_page' => $use_full_context ? 50 : min( 30, $limit ),
+            'paged'          => 1,
+        );
+
+        /**
+         * Filter the query args used to collect post summaries.
+         *
+         * @param array $query_args       WP_Query arguments.
+         * @param array $settings         Plugin settings array.
+         * @param bool  $use_full_context Whether full-context mode is active.
+         */
+        $query_args = apply_filters( 'groui_smart_assistant_context_post_query_args', $query_args, $settings, $use_full_context );
+
+        $per_page = isset( $query_args['posts_per_page'] ) ? absint( $query_args['posts_per_page'] ) : 0;
+        if ( $per_page < 1 ) {
+            $per_page = $use_full_context ? 50 : min( 30, $limit );
+        }
+        $query_args['posts_per_page'] = $per_page;
+        $current_page                  = isset( $query_args['paged'] ) ? max( 1, absint( $query_args['paged'] ) ) : 1;
+
+        if ( $use_full_context ) {
+            $max_posts = (int) apply_filters( 'groui_smart_assistant_context_maximum_posts', -1, $settings );
+
+            if ( 0 === $max_posts ) {
+                return array();
+            }
+
+            $target_total = ( $max_posts > 0 ) ? $max_posts : PHP_INT_MAX;
+        } else {
+            $target_total = $limit;
+        }
+
+        $summaries = array();
+
+        while ( PHP_INT_MAX === $target_total || count( $summaries ) < $target_total ) {
+            $paged_args          = $query_args;
+            $paged_args['paged'] = $current_page;
+
+            if ( PHP_INT_MAX !== $target_total ) {
+                $remaining = $target_total - count( $summaries );
+
+                if ( $remaining <= 0 ) {
+                    break;
+                }
+
+                $paged_args['posts_per_page'] = min( $per_page, $remaining );
+            }
+
+            $posts = get_posts( $paged_args );
+
+            if ( empty( $posts ) ) {
+                break;
+            }
+
+            foreach ( $posts as $post ) {
+                $summaries[] = array(
+                    'title'      => $post->post_title,
+                    'url'        => get_permalink( $post ),
+                    'date'       => mysql2date( DATE_RFC3339, $post->post_date_gmt ? $post->post_date_gmt : $post->post_date, false ),
+                    'excerpt'    => $this->prepare_long_form_content( $post->post_content, $use_full_context ? 140 : 70 ),
+                    'content'    => $this->prepare_long_form_content( $post->post_content, $use_full_context ? 320 : 160 ),
+                    'categories' => $this->get_post_term_names( $post->ID, 'category' ),
+                    'tags'       => $this->get_post_term_names( $post->ID, 'post_tag' ),
+                );
+
+                if ( PHP_INT_MAX !== $target_total && count( $summaries ) >= $target_total ) {
+                    break 2;
+                }
+            }
+
+            if ( count( $posts ) < $paged_args['posts_per_page'] ) {
                 break;
             }
 
@@ -682,7 +786,7 @@ class GROUI_Smart_Assistant_Context {
                     continue;
                 }
 
-                $summary = $this->build_product_summary( $product );
+                $summary = $this->build_product_summary( $product, $use_full_context );
 
                 if ( ! empty( $summary ) ) {
                     $summaries[] = $summary;
@@ -712,7 +816,7 @@ class GROUI_Smart_Assistant_Context {
      *
      * @return array Summary data ready to be stored in the assistant context.
      */
-    protected function build_product_summary( $product ) {
+    protected function build_product_summary( $product, $use_full_context = false ) {
         if ( ! is_a( $product, 'WC_Product' ) ) {
             return array();
         }
@@ -722,12 +826,20 @@ class GROUI_Smart_Assistant_Context {
         return array(
             'id'             => $product->get_id(),
             'name'           => $product->get_name(),
+            'sku'            => $product->get_sku(),
             'price'          => wp_strip_all_tags( $product->get_price_html() ),
             'permalink'      => $product->get_permalink(),
             'image'          => wp_get_attachment_image_url( $product->get_image_id(), 'medium' ),
-            'short_desc'     => wp_trim_words( wp_strip_all_tags( $product->get_short_description() ), 30 ),
+            'short_desc'     => $this->prepare_long_form_content( $product->get_short_description(), $use_full_context ? 90 : 50 ),
+            'long_desc'      => $this->prepare_long_form_content( $product->get_description(), $use_full_context ? 200 : 120 ),
             'categories'     => $category_ids,
             'category_names' => $this->get_product_category_names( $category_ids ),
+            'tags'           => $this->get_product_tag_names( $product->get_id() ),
+            'attributes'     => $this->get_product_attribute_summaries( $product ),
+            'gallery'        => $this->get_product_gallery_images( $product ),
+            'type'           => $product->get_type(),
+            'average_rating' => $product->get_average_rating(),
+            'review_count'   => $product->get_review_count(),
         );
     }
 
@@ -776,6 +888,187 @@ class GROUI_Smart_Assistant_Context {
         }
 
         return $names;
+    }
+
+    /**
+     * Retrieve product tag names for a product ID.
+     *
+     * @param int $product_id WooCommerce product ID.
+     *
+     * @return array
+     */
+    protected function get_product_tag_names( $product_id ) {
+        $product_id = absint( $product_id );
+
+        if ( ! $product_id ) {
+            return array();
+        }
+
+        if ( ! function_exists( 'wc_get_product_terms' ) ) {
+            return array();
+        }
+
+        $terms = wc_get_product_terms( $product_id, 'product_tag', array( 'fields' => 'names' ) );
+
+        if ( is_wp_error( $terms ) || empty( $terms ) ) {
+            return array();
+        }
+
+        return array_values(
+            array_filter(
+                array_map( 'sanitize_text_field', $terms )
+            )
+        );
+    }
+
+    /**
+     * Build a serialisable summary of WooCommerce product attributes.
+     *
+     * @param WC_Product $product Product instance.
+     *
+     * @return array
+     */
+    protected function get_product_attribute_summaries( $product ) {
+        $attributes = $product->get_attributes();
+
+        if ( empty( $attributes ) || ! is_array( $attributes ) ) {
+            return array();
+        }
+
+        $summaries = array();
+
+        foreach ( $attributes as $attribute ) {
+            if ( ! is_object( $attribute ) ) {
+                continue;
+            }
+
+            $name = method_exists( $attribute, 'get_name' ) ? $attribute->get_name() : '';
+            if ( $name && function_exists( 'wc_attribute_label' ) ) {
+                $name = wc_attribute_label( $name );
+            }
+
+            if ( $name ) {
+                $name = sanitize_text_field( $name );
+            }
+
+            if ( $attribute->is_taxonomy() ) {
+                if ( function_exists( 'wc_get_product_terms' ) ) {
+                    $values = wc_get_product_terms(
+                        $product->get_id(),
+                        $attribute->get_name(),
+                        array( 'fields' => 'names' )
+                    );
+                } else {
+                    $values = array();
+                }
+            } elseif ( method_exists( $attribute, 'get_options' ) ) {
+                $values = $attribute->get_options();
+            } else {
+                $values = array();
+            }
+
+            if ( is_wp_error( $values ) ) {
+                $values = array();
+            }
+
+            $values = array_values(
+                array_filter(
+                    array_map(
+                        static function( $value ) {
+                            return sanitize_text_field( (string) $value );
+                        },
+                        is_array( $values ) ? $values : array( $values )
+                    )
+                )
+            );
+
+            if ( empty( $name ) && empty( $values ) ) {
+                continue;
+            }
+
+            $summaries[] = array(
+                'name'   => $name,
+                'values' => $values,
+            );
+        }
+
+        return $summaries;
+    }
+
+    /**
+     * Retrieve gallery image URLs for a product.
+     *
+     * @param WC_Product $product Product instance.
+     *
+     * @return array
+     */
+    protected function get_product_gallery_images( $product ) {
+        $image_ids = method_exists( $product, 'get_gallery_image_ids' ) ? $product->get_gallery_image_ids() : array();
+
+        if ( empty( $image_ids ) || ! is_array( $image_ids ) ) {
+            return array();
+        }
+
+        $urls = array();
+
+        foreach ( $image_ids as $image_id ) {
+            $image_id = absint( $image_id );
+
+            if ( ! $image_id ) {
+                continue;
+            }
+
+            $url = wp_get_attachment_image_url( $image_id, 'large' );
+
+            if ( $url ) {
+                $urls[] = $url;
+            }
+        }
+
+        return $urls;
+    }
+
+    /**
+     * Collect taxonomy term names for a post.
+     *
+     * @param int    $post_id  Post ID.
+     * @param string $taxonomy Taxonomy slug.
+     *
+     * @return array
+     */
+    protected function get_post_term_names( $post_id, $taxonomy ) {
+        $post_id  = absint( $post_id );
+        $taxonomy = sanitize_key( $taxonomy );
+
+        if ( ! $post_id || empty( $taxonomy ) ) {
+            return array();
+        }
+
+        $terms = wp_get_post_terms( $post_id, $taxonomy, array( 'fields' => 'names' ) );
+
+        if ( is_wp_error( $terms ) || empty( $terms ) ) {
+            return array();
+        }
+
+        return array_values(
+            array_filter(
+                array_map( 'sanitize_text_field', $terms )
+            )
+        );
+    }
+
+    /**
+     * Prepare long-form text snippets while keeping them concise.
+     *
+     * @param string $content    Raw HTML/text content.
+     * @param int    $word_limit Maximum number of words to keep.
+     *
+     * @return string
+     */
+    protected function prepare_long_form_content( $content, $word_limit ) {
+        $word_limit = max( 1, absint( $word_limit ) );
+
+        return wp_trim_words( wp_strip_all_tags( (string) $content ), $word_limit );
     }
 
     /**

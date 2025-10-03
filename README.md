@@ -6,15 +6,12 @@ Plugin de WordPress que crea un asistente flotante con una IA conectada a OpenAI
 
 - Botón flotante con interfaz oscura y moderna.
 - Chat en vivo impulsado por OpenAI (modelo configurable, por defecto `gpt-5`).
-- Indexa páginas, categorías, FAQs, productos y sitemap para construir un contexto propio.
+- Indexa a toda la pagina web sin esepcion, pginas, productos, descripciones, precios, categorias, marcas etc.
 - Recomienda productos de WooCommerce y muestra las sugerencias en un carrusel.
-- Panel de ajustes en el administrador para definir API Key, modelo y límites de indexado.
-- Actualización automática del contexto mediante cron jobs horarios.
-
+- Panel de ajustes en el administrador para definir API Key, modelo y indexado.
 ## Requisitos
-
 - WordPress 6.0 o superior.
-- WooCommerce (opcional pero recomendado).
+- WooCommerce.
 - Clave de API de OpenAI con acceso al modelo GPT-5.
 
 ## Instalación

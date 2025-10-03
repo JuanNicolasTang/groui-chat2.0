@@ -24,6 +24,7 @@ class GROUI_Smart_Assistant_Admin {
         add_action( 'admin_init', array( $this, 'register_settings' ) );
         add_action( 'admin_notices', array( $this, 'maybe_show_missing_key_notice' ) );
         add_action( 'groui_smart_assistant_refresh_context', array( $this, 'refresh_context_cron' ) );
+        add_action( 'groui_smart_assistant_refresh_context_single', array( $this, 'refresh_context_cron' ) );
     }
 
     /**

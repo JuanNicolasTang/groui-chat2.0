@@ -49,14 +49,69 @@ class GROUI_Smart_Assistant_Context {
      * @return array The freshly built context.
      */
     public function refresh_context( $force = false ) {
-        $context = get_transient( GROUI_Smart_Assistant::CONTEXT_TRANSIENT );
+        $cached = get_transient( GROUI_Smart_Assistant::CONTEXT_TRANSIENT );
 
         // If a cached context exists and no force refresh is requested, return it.
-        if ( ! $force && false !== $context ) {
-            return $context;
+        if ( ! $force && false !== $cached ) {
+            return $cached;
         }
 
         $settings = $this->get_settings();
+
+ codex/add-filter-for-wp_remote_post-args-ru6ifg
+        $this->prepare_environment_for_context_build( $settings );
+
+        try {
+            $context = array(
+                'site'       => get_bloginfo( 'name' ),
+                'tagline'    => get_bloginfo( 'description' ),
+                'sitemap'    => $this->get_sitemap_summary( $settings ),
+                'pages'      => $this->get_page_summaries( $settings['max_pages'], $settings ),
+                'faqs'       => $this->get_faqs_from_content( $settings ),
+                'products'   => $this->get_product_summaries( $settings['max_products'], $settings ),
+                'categories' => $this->get_taxonomy_summaries( $settings ),
+            );
+
+            // Cache the built context for one hour.
+            set_transient( GROUI_Smart_Assistant::CONTEXT_TRANSIENT, $context, HOUR_IN_SECONDS );
+
+            return $context;
+        } catch ( \Throwable $error ) {
+            if ( ! empty( $settings['enable_debug'] ) ) {
+                $this->log_debug(
+                    'Context refresh failed: ' . $error->getMessage(),
+                    array( 'trace' => $error->getTraceAsString() ),
+                    $settings
+                );
+            }
+
+            if ( is_array( $cached ) ) {
+                return $cached;
+            }
+
+            return array(
+                'site'       => get_bloginfo( 'name' ),
+                'tagline'    => get_bloginfo( 'description' ),
+                'sitemap'    => array(),
+                'pages'      => array(),
+                'faqs'       => array(),
+                'products'   => array(),
+                'categories' => array(),
+            );
+        }
+    }
+
+    /**
+     * Raise resource limits when building large contexts.
+     *
+     * @param array $settings Plugin settings.
+     *
+     * @return void
+     */
+    protected function prepare_environment_for_context_build( $settings ) {
+        if ( empty( $settings['deep_context_mode'] ) ) {
+            return;
+        }
 
         $context = array(
             'site'       => get_bloginfo( 'name' ),
@@ -73,11 +128,72 @@ class GROUI_Smart_Assistant_Context {
             'categories' => $this->get_taxonomy_summaries(),
  main
         );
+ main
 
-        // Cache the built context for one hour.
-        set_transient( GROUI_Smart_Assistant::CONTEXT_TRANSIENT, $context, HOUR_IN_SECONDS );
+        if ( function_exists( 'wp_raise_memory_limit' ) ) {
+            wp_raise_memory_limit( 'admin' );
+        }
 
-        return $context;
+        $time_limit = absint( apply_filters( 'groui_smart_assistant_context_time_limit', 120, $settings ) );
+
+        if ( $time_limit > 0 && $this->can_adjust_time_limit() ) {
+            $current_limit = $this->get_current_execution_time_limit();
+
+            if ( 0 === $current_limit || $time_limit > $current_limit ) {
+                try {
+                    set_time_limit( $time_limit );
+                } catch ( \Throwable $error ) {
+                    if ( ! empty( $settings['enable_debug'] ) ) {
+                        $this->log_debug(
+                            'Unable to adjust execution time limit: ' . $error->getMessage(),
+                            array(
+                                'requested_limit' => $time_limit,
+                                'previous_limit'  => $current_limit,
+                            ),
+                            $settings
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Determine whether the environment allows calling set_time_limit().
+     *
+     * @return bool
+     */
+    protected function can_adjust_time_limit() {
+        if ( ! function_exists( 'set_time_limit' ) ) {
+            return false;
+        }
+
+        if ( ! function_exists( 'ini_get' ) ) {
+            return true;
+        }
+
+        $disabled = ini_get( 'disable_functions' );
+
+        if ( empty( $disabled ) ) {
+            return true;
+        }
+
+        $disabled_functions = array_map( 'trim', explode( ',', $disabled ) );
+
+        return ! in_array( 'set_time_limit', $disabled_functions, true );
+    }
+
+    /**
+     * Retrieve the current max_execution_time without triggering errors on locked-down hosts.
+     *
+     * @return int
+     */
+    protected function get_current_execution_time_limit() {
+        if ( ! function_exists( 'ini_get' ) ) {
+            return 0;
+        }
+
+        return (int) ini_get( 'max_execution_time' );
     }
 
     /**
@@ -271,6 +387,23 @@ class GROUI_Smart_Assistant_Context {
     protected function get_page_summaries( $limit, $settings = array() ) {
         $settings         = wp_parse_args( $settings, array( 'deep_context_mode' => false ) );
         $use_full_context = ! empty( $settings['deep_context_mode'] );
+ codex/add-filter-for-wp_remote_post-args-ru6ifg
+        $limit            = max( 1, absint( $limit ) );
+
+        $query_args = array(
+            'post_type'      => 'page',
+            'post_status'    => 'publish',
+            'orderby'        => array(
+                'menu_order' => 'ASC',
+                'date'       => 'DESC',
+            ),
+            'posts_per_page' => $use_full_context ? 50 : min( 20, $limit ),
+            'paged'          => 1,
+        );
+
+        /**
+         * Filter the arguments passed to `get_posts()` when building page summaries.
+
 
         if ( $use_full_context ) {
             $query_args = array(
@@ -289,6 +422,7 @@ class GROUI_Smart_Assistant_Context {
 
         /**
          * Filter the arguments passed to `get_pages()` when building summaries.
+ main
          *
          * @param array $query_args       Page query arguments.
          * @param array $settings         Plugin settings array.
@@ -296,16 +430,68 @@ class GROUI_Smart_Assistant_Context {
          */
         $query_args = apply_filters( 'groui_smart_assistant_context_page_query_args', $query_args, $settings, $use_full_context );
 
+ codex/add-filter-for-wp_remote_post-args-ru6ifg
+        $per_page = isset( $query_args['posts_per_page'] ) ? absint( $query_args['posts_per_page'] ) : 0;
+        if ( $per_page < 1 ) {
+            $per_page = $use_full_context ? 50 : min( 20, $limit );
+        }
+        $query_args['posts_per_page'] = $per_page;
+        $current_page                  = isset( $query_args['paged'] ) ? max( 1, absint( $query_args['paged'] ) ) : 1;
+
+        $max_pages = PHP_INT_MAX;
+        if ( $use_full_context ) {
+            $max_pages = (int) apply_filters( 'groui_smart_assistant_context_maximum_pages', -1, $settings );
+            if ( 0 === $max_pages ) {
+                return array();
+            }
+            if ( $max_pages < 0 ) {
+                $max_pages = PHP_INT_MAX;
+            }
+        }
+
         $pages = get_pages( $query_args );
+ main
 
         $summaries = array();
-        foreach ( $pages as $page ) {
-            $summaries[] = array(
-                'title'   => $page->post_title,
-                'url'     => get_permalink( $page ),
-                'excerpt' => wp_trim_words( wp_strip_all_tags( $page->post_content ), 55 ),
-            );
+
+        while ( $use_full_context ? count( $summaries ) < $max_pages : count( $summaries ) < $limit ) {
+            $paged_args              = $query_args;
+            $paged_args['paged']     = $current_page;
+            if ( ! $use_full_context ) {
+                $remaining                   = $limit - count( $summaries );
+                $paged_args['posts_per_page'] = min( $per_page, $remaining );
+            }
+
+            $pages = get_posts( $paged_args );
+
+            if ( empty( $pages ) ) {
+                break;
+            }
+
+            foreach ( $pages as $page ) {
+                $summaries[] = array(
+                    'title'   => $page->post_title,
+                    'url'     => get_permalink( $page ),
+                    'excerpt' => wp_trim_words( wp_strip_all_tags( $page->post_content ), 55 ),
+                );
+
+                if ( ! $use_full_context && count( $summaries ) >= $limit ) {
+                    break 2;
+                }
+
+                if ( $use_full_context && count( $summaries ) >= $max_pages ) {
+                    break 2;
+                }
+            }
+
+            if ( count( $pages ) < $paged_args['posts_per_page'] ) {
+                break;
+            }
+
+            $current_page++;
         }
+
+        wp_reset_postdata();
 
         return $summaries;
     }
@@ -316,13 +502,21 @@ class GROUI_Smart_Assistant_Context {
      * @return array List of FAQs with `question` and `source` keys.
      */
     protected function get_faqs_from_content( $settings = array() ) {
+ codex/add-filter-for-wp_remote_post-args-ru6ifg
+        $faqs            = array();
+
         $faqs  = array();
+ main
         $settings         = wp_parse_args( $settings, array( 'deep_context_mode' => false ) );
         $use_full_context = ! empty( $settings['deep_context_mode'] );
 
         $query_args = array(
             'post_type'      => array( 'page', 'post' ),
             'post_status'    => 'publish',
+ codex/add-filter-for-wp_remote_post-args-ru6ifg
+            'posts_per_page' => $use_full_context ? 25 : 20,
+            'paged'          => 1,
+        );
             'posts_per_page' => $use_full_context ? -1 : 20,
         );
 
@@ -336,24 +530,64 @@ class GROUI_Smart_Assistant_Context {
         $query_args = apply_filters( 'groui_smart_assistant_context_faq_query_args', $query_args, $settings, $use_full_context );
 
         $posts = get_posts( $query_args );
+ main
 
-        foreach ( $posts as $post ) {
-            // Match headings (h2–h4) within the post content.
-            preg_match_all( '/<h[2-4][^>]*>(.*?)<\/h[2-4]>/', $post->post_content, $matches );
-            if ( empty( $matches[1] ) ) {
-                continue;
+        /**
+         * Filter the arguments passed to `get_posts()` for FAQ extraction.
+         *
+         * @param array $query_args       Post query arguments.
+         * @param array $settings         Plugin settings array.
+         * @param bool  $use_full_context Whether full-context mode is active.
+         */
+        $query_args = apply_filters( 'groui_smart_assistant_context_faq_query_args', $query_args, $settings, $use_full_context );
+
+        $per_page = isset( $query_args['posts_per_page'] ) ? absint( $query_args['posts_per_page'] ) : 0;
+        if ( $per_page < 1 ) {
+            $per_page = $use_full_context ? 25 : 20;
+        }
+        $query_args['posts_per_page'] = $per_page;
+        $current_page                 = isset( $query_args['paged'] ) ? max( 1, absint( $query_args['paged'] ) ) : 1;
+
+        while ( true ) {
+            $paged_args              = $query_args;
+            $paged_args['paged']     = $current_page;
+
+            $posts = get_posts( $paged_args );
+
+            if ( empty( $posts ) ) {
+                break;
             }
-            foreach ( $matches[1] as $heading ) {
-                $clean = wp_strip_all_tags( $heading );
-                if ( empty( $clean ) ) {
+
+            foreach ( $posts as $post ) {
+                // Match headings (h2–h4) within the post content.
+                preg_match_all( '/<h[2-4][^>]*>(.*?)<\/h[2-4]>/', $post->post_content, $matches );
+                if ( empty( $matches[1] ) ) {
                     continue;
                 }
-                $faqs[] = array(
-                    'question' => $clean,
-                    'source'   => get_permalink( $post ),
-                );
+                foreach ( $matches[1] as $heading ) {
+                    $clean = wp_strip_all_tags( $heading );
+                    if ( empty( $clean ) ) {
+                        continue;
+                    }
+                    $faqs[] = array(
+                        'question' => $clean,
+                        'source'   => get_permalink( $post ),
+                    );
+                }
             }
+
+            if ( ! $use_full_context ) {
+                break;
+            }
+
+            if ( count( $posts ) < $per_page ) {
+                break;
+            }
+
+            $current_page++;
         }
+
+        wp_reset_postdata();
 
         return $faqs;
     }
@@ -384,10 +618,21 @@ class GROUI_Smart_Assistant_Context {
          */
         $limit = apply_filters( 'groui_smart_assistant_context_product_limit', $limit, $settings, $use_full_context );
         $limit = max( 0, absint( $limit ) );
+ codex/add-filter-for-wp_remote_post-args-ru6ifg
+
+        $query_args = array(
+            'status'   => 'publish',
+            'orderby'  => 'date',
+            'order'    => 'DESC',
+            'paginate' => true,
+            'limit'    => $use_full_context ? 50 : ( $limit > 0 ? min( $limit, 20 ) : 12 ),
+            'page'     => 1,
+
         $query_args        = array(
             'status'  => 'publish',
             'orderby' => 'date',
             'order'   => 'DESC',
+  main
         );
 
         if ( $use_full_context ) {
@@ -406,23 +651,101 @@ class GROUI_Smart_Assistant_Context {
                 return array();
             }
 
+ codex/add-filter-for-wp_remote_post-args-ru6ifg
+            $target_total = ( $max_catalog > 0 ) ? $max_catalog : PHP_INT_MAX;
+
             $query_args['limit'] = ( $max_catalog > 0 ) ? absint( $max_catalog ) : -1;
+ main
         } else {
             if ( $limit < 1 ) {
                 $limit = 12;
             }
+
+ codex/add-filter-for-wp_remote_post-args-ru6ifg
+            $target_total = $limit;
+        }
+
+        if ( ! $use_full_context && $target_total <= 0 ) {
+            return array();
+        }
+
+        /**
+         * Filter the arguments passed to `wc_get_products()` when building el contexto de WooCommerce.
 
             $query_args['limit'] = $limit;
         }
 
         /**
          * Filter the arguments passed to `wc_get_products()` when building the contexto de WooCommerce.
+ main
          *
          * @param array $query_args       Default WooCommerce query arguments.
          * @param array $settings         Plugin settings array.
          * @param bool  $use_full_context Whether full-context mode is active.
          */
         $query_args = apply_filters( 'groui_smart_assistant_context_product_query_args', $query_args, $settings, $use_full_context );
+
+ codex/add-filter-for-wp_remote_post-args-ru6ifg
+        $per_page = isset( $query_args['limit'] ) ? absint( $query_args['limit'] ) : 0;
+        if ( $per_page < 1 ) {
+            $per_page = $use_full_context ? 50 : min( max( 1, $target_total ), 20 );
+        }
+        $query_args['limit']    = $per_page;
+        $query_args['paginate'] = true;
+        $current_page           = isset( $query_args['page'] ) ? max( 1, absint( $query_args['page'] ) ) : 1;
+
+        $summaries = array();
+
+        while ( PHP_INT_MAX === $target_total || count( $summaries ) < $target_total ) {
+            $paged_args          = $query_args;
+            $paged_args['page']  = $current_page;
+            if ( PHP_INT_MAX === $target_total ) {
+                $paged_args['limit'] = $per_page;
+            } else {
+                $remaining = $target_total - count( $summaries );
+                if ( $remaining <= 0 ) {
+                    break;
+                }
+                $paged_args['limit'] = min( $per_page, $remaining );
+            }
+
+            $products = wc_get_products( $paged_args );
+
+            if ( is_wp_error( $products ) ) {
+                break;
+            }
+
+            if ( isset( $products['products'] ) && is_array( $products['products'] ) ) {
+                $product_objects = $products['products'];
+            } else {
+                $product_objects = $products;
+            }
+
+            if ( empty( $product_objects ) ) {
+                break;
+            }
+
+            foreach ( $product_objects as $product ) {
+                if ( ! $product || ! is_object( $product ) ) {
+                    continue;
+                }
+
+                $summary = $this->build_product_summary( $product );
+
+                if ( ! empty( $summary ) ) {
+                    $summaries[] = $summary;
+                }
+
+                if ( PHP_INT_MAX !== $target_total && count( $summaries ) >= $target_total ) {
+                    break;
+                }
+            }
+
+            if ( count( $product_objects ) < $paged_args['limit'] ) {
+                break;
+            }
+
+            $current_page++;
 
         $products = wc_get_products( $query_args );
 
@@ -456,6 +779,7 @@ class GROUI_Smart_Assistant_Context {
             if ( ! empty( $summary ) ) {
                 $summaries[] = $summary;
             }
+ main
         }
 
         return $summaries;
@@ -558,10 +882,19 @@ class GROUI_Smart_Assistant_Context {
             if ( ! taxonomy_exists( $taxonomy ) ) {
                 continue;
             }
+ codex/add-filter-for-wp_remote_post-args-ru6ifg
+
+            $term_args = array(
+                'taxonomy'   => $taxonomy,
+                'hide_empty' => true,
+                'number'     => $use_full_context ? 50 : 20,
+                'offset'     => 0,
+
             $term_args = array(
                 'taxonomy'   => $taxonomy,
                 'hide_empty' => true,
                 'number'     => $use_full_context ? 0 : 20,
+ main
             );
 
             /**
@@ -574,20 +907,89 @@ class GROUI_Smart_Assistant_Context {
              */
             $term_args = apply_filters( 'groui_smart_assistant_context_taxonomy_query_args', $term_args, $taxonomy, $settings, $use_full_context );
 
+ codex/add-filter-for-wp_remote_post-args-ru6ifg
+            $per_page = isset( $term_args['number'] ) ? absint( $term_args['number'] ) : 0;
+            if ( $per_page < 1 ) {
+                $per_page = $use_full_context ? 50 : 20;
+            }
+            $term_args['number'] = $per_page;
+            $offset              = isset( $term_args['offset'] ) ? max( 0, absint( $term_args['offset'] ) ) : 0;
+
+            if ( $use_full_context ) {
+                /**
+                 * Limit the number of terms fetched per taxonomy when deep-context mode is enabled.
+                 *
+                 * Return -1 for unlimited (default) or a positive integer to cap the collection.
+                 *
+                 * @param int    $max_terms Maximum number of terms to include, -1 for unlimited.
+                 * @param string $taxonomy  Current taxonomy slug.
+                 * @param array  $settings  Plugin settings array.
+                 */
+                $max_terms = apply_filters( 'groui_smart_assistant_context_maximum_terms', -1, $taxonomy, $settings );
+                $max_terms = (int) $max_terms;
+
+                if ( 0 === $max_terms ) {
+                    continue;
+                }
+
+                $target_total = ( $max_terms > 0 ) ? $max_terms : PHP_INT_MAX;
+            } else {
+                $target_total = $per_page;
+
             $terms = get_terms( $term_args );
             if ( is_wp_error( $terms ) || empty( $terms ) ) {
                 continue;
+ main
             }
-            $summary[ $taxonomy ] = array_map(
-                static function( $term ) {
-                    return array(
+
+            $collected = array();
+
+            while ( PHP_INT_MAX === $target_total || count( $collected ) < $target_total ) {
+                $paged_args           = $term_args;
+                $paged_args['offset'] = $offset;
+
+                if ( PHP_INT_MAX === $target_total ) {
+                    $paged_args['number'] = $per_page;
+                } else {
+                    $remaining = $target_total - count( $collected );
+                    if ( $remaining <= 0 ) {
+                        break;
+                    }
+                    $paged_args['number'] = min( $per_page, $remaining );
+                }
+
+                $terms = get_terms( $paged_args );
+                if ( is_wp_error( $terms ) || empty( $terms ) ) {
+                    break;
+                }
+
+                foreach ( $terms as $term ) {
+                    $link = get_term_link( $term );
+                    if ( is_wp_error( $link ) ) {
+                        $link = '';
+                    }
+
+                    $collected[] = array(
                         'name'        => $term->name,
                         'description' => wp_trim_words( $term->description, 25 ),
-                        'url'         => get_term_link( $term ),
+                        'url'         => $link,
                     );
-                },
-                $terms
-            );
+
+                    if ( PHP_INT_MAX !== $target_total && count( $collected ) >= $target_total ) {
+                        break 2;
+                    }
+                }
+
+                if ( count( $terms ) < $paged_args['number'] ) {
+                    break;
+                }
+
+                $offset += count( $terms );
+            }
+
+            if ( ! empty( $collected ) ) {
+                $summary[ $taxonomy ] = $collected;
+            }
         }
 
         return $summary;

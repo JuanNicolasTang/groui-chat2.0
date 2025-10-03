@@ -188,7 +188,7 @@ class GROUI_Smart_Assistant_Context {
     protected function get_settings() {
         $defaults = array(
             'openai_api_key'   => '',
-            'model'            => 'gpt-5.1',
+            'model'            => 'gpt-5',
             'sitemap_url'      => home_url( '/sitemap.xml' ),
             'enable_debug'     => false,
             'max_pages'        => -1,
@@ -270,7 +270,7 @@ class GROUI_Smart_Assistant_Context {
         }
 
         $urls = array();
-        $max_entries = max( 1, absint( apply_filters( 'groui_smart_assistant_sitemap_max_entries', 20, $settings ) ) );
+        $max_entries = max( 1, absint( apply_filters( 'groui_smart_assistant_sitemap_max_entries', 500, $settings ) ) );
 
         foreach ( $xml->url as $entry ) {
             $loc = isset( $entry->loc ) ? (string) $entry->loc : '';
@@ -304,7 +304,7 @@ class GROUI_Smart_Assistant_Context {
      * @return array List of sitemap summaries.
      */
     protected function parse_sitemap_fallback( $body, $settings ) {
-        $max_entries = max( 1, absint( apply_filters( 'groui_smart_assistant_sitemap_max_entries', 20, $settings ) ) );
+        $max_entries = max( 1, absint( apply_filters( 'groui_smart_assistant_sitemap_max_entries', 500, $settings ) ) );
 
         if ( ! preg_match_all( '/<url>(.*?)<\/url>/is', $body, $matches ) ) {
             return array();

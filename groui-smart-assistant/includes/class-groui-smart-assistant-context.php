@@ -118,13 +118,51 @@ class GROUI_Smart_Assistant_Context {
 
         $time_limit = absint( apply_filters( 'groui_smart_assistant_context_time_limit', 120, $settings ) );
 
-        if ( $time_limit > 0 && function_exists( 'set_time_limit' ) ) {
-            $current_limit = (int) ini_get( 'max_execution_time' );
+        if ( $time_limit > 0 && $this->can_adjust_time_limit() ) {
+            $current_limit = $this->get_current_execution_time_limit();
 
             if ( 0 === $current_limit || $time_limit > $current_limit ) {
-                @set_time_limit( $time_limit ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+                set_time_limit( $time_limit );
             }
         }
+    }
+
+    /**
+     * Determine whether the environment allows calling set_time_limit().
+     *
+     * @return bool
+     */
+    protected function can_adjust_time_limit() {
+        if ( ! function_exists( 'set_time_limit' ) ) {
+            return false;
+        }
+
+        if ( ! function_exists( 'ini_get' ) ) {
+            return true;
+        }
+
+        $disabled = ini_get( 'disable_functions' );
+
+        if ( empty( $disabled ) ) {
+            return true;
+        }
+
+        $disabled_functions = array_map( 'trim', explode( ',', $disabled ) );
+
+        return ! in_array( 'set_time_limit', $disabled_functions, true );
+    }
+
+    /**
+     * Retrieve the current max_execution_time without triggering errors on locked-down hosts.
+     *
+     * @return int
+     */
+    protected function get_current_execution_time_limit() {
+        if ( ! function_exists( 'ini_get' ) ) {
+            return 0;
+        }
+
+        return (int) ini_get( 'max_execution_time' );
     }
 
     /**

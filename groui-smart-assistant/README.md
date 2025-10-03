@@ -40,7 +40,7 @@ Tras activar el plugin, aparecerá un botón flotante en la esquina inferior der
 - `groui_smart_assistant_context_faq_query_args`: Modifica la consulta paginada a `get_posts()` durante la extracción de FAQs para aumentar, reducir o filtrar el contenido escaneado en cada pasada.
 - `groui_smart_assistant_context_taxonomies`: Cambia el listado de taxonomías incluidas en el contexto (por defecto categorías de producto, etiquetas, marca y blog).
 - `groui_smart_assistant_context_taxonomy_query_args`: Ajusta los argumentos de `get_terms()` por taxonomía; en modo de contexto completo se itera por lotes (50 términos por defecto) y puedes personalizar `number`, `offset` u otros parámetros.
-- `groui_smart_assistant_context_time_limit`: Permite elevar (o reducir) el límite de ejecución en segundos cuando el modo de contexto completo requiere más tiempo para recorrer catálogos extensos.
+- `groui_smart_assistant_context_time_limit`: Permite elevar (o reducir) el límite de ejecución en segundos cuando el modo de contexto completo requiere más tiempo para recorrer catálogos extensos. Si tu hosting bloquea `set_time_limit()`, devuelve `0` mediante este filtro para omitir el ajuste automáticamente.
 - `groui_smart_assistant_context_maximum_pages`: Establece un tope al número de páginas cargadas en modo de contexto completo (por defecto ilimitado).
 - `groui_smart_assistant_context_maximum_terms`: Fija un máximo de términos por taxonomía cuando se recorre el catálogo completo (por defecto ilimitado).
 

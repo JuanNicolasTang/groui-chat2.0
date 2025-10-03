@@ -323,6 +323,7 @@ class GROUI_Smart_Assistant_OpenAI {
                     'short_desc'     => 2,
                     'long_desc'      => 2,
                     'category_names' => 2,
+                    'brand_names'    => 2,
                     'tags'           => 1,
                     'attributes'     => 1,
                 ),

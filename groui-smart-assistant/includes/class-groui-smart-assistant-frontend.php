@@ -164,7 +164,7 @@ class GROUI_Smart_Assistant_Frontend {
                 if ( ! $product instanceof WC_Product ) {
                     continue;
                 }
-                if ( ! $product->is_purchasable() || ! $product->is_in_stock() ) {
+                if ( ! $product->is_purchasable() |) {
                     continue;
                 }
                 $products[ $product_id ] = $product;
@@ -178,8 +178,7 @@ class GROUI_Smart_Assistant_Frontend {
                 'orderby' => 'popularity',
             );
             if ( ! empty( $query ) ) {
-                $args['s'] = $query;
-            }
+                $args['s'] = $query;            }
             $products = wc_get_products( $args );
         }
 

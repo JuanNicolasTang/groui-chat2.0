@@ -30,9 +30,19 @@ class GROUI_Smart_Assistant_OpenAI {
      */
     public function query( $message, $context ) {
         $settings = get_option( GROUI_Smart_Assistant::OPTION_KEY, array() );
-        $api_key  = isset( $settings['openai_api_key'] ) ? trim( $settings['openai_api_key'] ) : '';
-        $model    = isset( $settings['model'] ) ? $settings['model'] : '';
-        $model    = $this->normalize_model( $model );
+        $settings = wp_parse_args(
+            $settings,
+            array(
+                'openai_api_key'   => '',
+                'model'            => '',
+                'max_pages'        => 12,
+                'max_products'     => 12,
+                'deep_context_mode' => false,
+            )
+        );
+
+        $api_key = trim( $settings['openai_api_key'] );
+        $model   = $this->normalize_model( $settings['model'] );
 
         $allowed_models = apply_filters(
             'groui_smart_assistant_allowed_models',
@@ -47,7 +57,43 @@ class GROUI_Smart_Assistant_OpenAI {
             return new WP_Error( 'missing_api_key', __( 'Falta la API key de OpenAI.', 'groui-smart-assistant' ) );
         }
 
-        $context       = $this->refine_context_for_message( $message, $context );
+        $original_context = $context;
+
+        $tokens = $this->tokenize_text( $message );
+        $tokens = apply_filters( 'groui_smart_assistant_query_tokens', $tokens, $message, $context );
+
+        $use_full_context = ! empty( $settings['deep_context_mode'] );
+
+        /**
+         * Allow toggling full-context mode before building the prompt.
+         *
+         * When enabled the assistant skips relevance scoring and sends the
+         * complete cached context to OpenAI, which is helpful when the site
+         * owner prefiere respuestas exhaustivas aunque el prompt sea más largo.
+         *
+         * @param bool   $use_full_context Whether full-context mode is active.
+         * @param string $message          Original user message.
+         * @param array  $context          Full cached context array.
+         * @param array  $settings         Plugin settings array.
+         * @param array  $tokens           Tokens extracted from the user message.
+         */
+        $use_full_context = apply_filters( 'groui_smart_assistant_use_full_context', $use_full_context, $message, $context, $settings, $tokens );
+
+        if ( $use_full_context ) {
+            /**
+             * Filter the context when full-context mode is enabled.
+             *
+             * @param array  $context  Context array that will be sent to OpenAI.
+             * @param string $message  User message.
+             * @param array  $settings Plugin settings array.
+             * @param array  $tokens   Tokens extracted from the user message.
+             */
+            $context = apply_filters( 'groui_smart_assistant_deep_context', $context, $message, $settings, $tokens );
+            $context = apply_filters( 'groui_smart_assistant_refined_context', $context, $original_context, $message, $tokens, $settings );
+        } else {
+            $context = $this->refine_context_for_message( $message, $context, $settings, $tokens );
+        }
+
         $system_prompt = $this->build_system_prompt( $context );
 
         $body = array(
@@ -76,16 +122,32 @@ class GROUI_Smart_Assistant_OpenAI {
          */
         $body = apply_filters( 'groui_smart_assistant_openai_body', $body, $message, $context );
 
+        $request_args = array(
+            'headers' => array(
+                'Content-Type'  => 'application/json',
+                'Authorization' => 'Bearer ' . $api_key,
+            ),
+            'timeout' => 60,
+            'body'    => wp_json_encode( $body ),
+        );
+
+        /**
+         * Filter the request arguments before sending to OpenAI.
+         *
+         * Developers can tweak headers, increase the timeout, or alter any
+         * other `wp_remote_post()` parameter via this filter. The default
+         * timeout is 60 seconds to accommodate longer running completions.
+         *
+         * @param array  $request_args HTTP request arguments passed to `wp_remote_post()`.
+         * @param array  $body         Prepared request payload that will be JSON encoded.
+         * @param string $message      Original user message.
+         * @param array  $context      Built site context.
+         */
+        $request_args = apply_filters( 'groui_smart_assistant_openai_request_args', $request_args, $body, $message, $context );
+
         $response = wp_remote_post(
             'https://api.openai.com/v1/chat/completions',
-            array(
-                'headers' => array(
-                    'Content-Type'  => 'application/json',
-                    'Authorization' => 'Bearer ' . $api_key,
-                ),
-                'timeout' => 30,
-                'body'    => wp_json_encode( $body ),
-            )
+            $request_args
         );
 
         if ( is_wp_error( $response ) ) {
@@ -171,17 +233,27 @@ class GROUI_Smart_Assistant_OpenAI {
      *
      * @return array Refined context.
      */
-    protected function refine_context_for_message( $message, $context ) {
-        $tokens = $this->tokenize_text( $message );
+    protected function refine_context_for_message( $message, $context, $settings = array(), $tokens = null ) {
+        $settings = wp_parse_args(
+            $settings,
+            array(
+                'max_pages'    => 12,
+                'max_products' => 12,
+            )
+        );
 
-        /**
-         * Filter the set of query tokens extracted from the user message.
-         *
-         * @param array  $tokens  Normalised unique tokens.
-         * @param string $message Original user message.
-         * @param array  $context Full site context.
-         */
-        $tokens = apply_filters( 'groui_smart_assistant_query_tokens', $tokens, $message, $context );
+        if ( null === $tokens ) {
+            $tokens = $this->tokenize_text( $message );
+
+            /**
+             * Filter the set of query tokens extracted from the user message.
+             *
+             * @param array  $tokens  Normalised unique tokens.
+             * @param string $message Original user message.
+             * @param array  $context Full site context.
+             */
+            $tokens = apply_filters( 'groui_smart_assistant_query_tokens', $tokens, $message, $context );
+        }
 
         if ( empty( $tokens ) ) {
             return $context;
@@ -190,7 +262,8 @@ class GROUI_Smart_Assistant_OpenAI {
         $refined = $context;
 
         if ( ! empty( $context['pages'] ) && is_array( $context['pages'] ) ) {
-            $limit = apply_filters( 'groui_smart_assistant_max_relevant_pages', 8, $message, $context, $tokens );
+            $default_limit = $this->normalize_limit( $settings['max_pages'], $context['pages'] );
+            $limit         = apply_filters( 'groui_smart_assistant_max_relevant_pages', $default_limit, $message, $context, $tokens, $settings );
             $refined['pages'] = $this->filter_entries_by_tokens(
                 $context['pages'],
                 $tokens,
@@ -203,7 +276,8 @@ class GROUI_Smart_Assistant_OpenAI {
         }
 
         if ( ! empty( $context['faqs'] ) && is_array( $context['faqs'] ) ) {
-            $limit = apply_filters( 'groui_smart_assistant_max_relevant_faqs', 10, $message, $context, $tokens );
+            $default_limit = $this->normalize_limit( count( $context['faqs'] ), $context['faqs'] );
+            $limit         = apply_filters( 'groui_smart_assistant_max_relevant_faqs', $default_limit, $message, $context, $tokens, $settings );
             $refined['faqs'] = $this->filter_entries_by_tokens(
                 $context['faqs'],
                 $tokens,
@@ -215,7 +289,8 @@ class GROUI_Smart_Assistant_OpenAI {
         }
 
         if ( ! empty( $context['products'] ) && is_array( $context['products'] ) ) {
-            $limit = apply_filters( 'groui_smart_assistant_max_relevant_products', 8, $message, $context, $tokens );
+            $default_limit = $this->normalize_limit( $settings['max_products'], $context['products'] );
+            $limit         = apply_filters( 'groui_smart_assistant_max_relevant_products', $default_limit, $message, $context, $tokens, $settings );
             $refined['products'] = $this->filter_entries_by_tokens(
                 $context['products'],
                 $tokens,
@@ -236,7 +311,8 @@ class GROUI_Smart_Assistant_OpenAI {
                     continue;
                 }
 
-                $limit = apply_filters( 'groui_smart_assistant_max_relevant_terms', 6, $taxonomy, $message, $context, $tokens );
+                $default_limit = $this->normalize_limit( count( $terms ), $terms );
+                $limit         = apply_filters( 'groui_smart_assistant_max_relevant_terms', $default_limit, $taxonomy, $message, $context, $tokens, $settings );
                 $filtered_terms = $this->filter_entries_by_tokens(
                     $terms,
                     $tokens,
@@ -258,7 +334,8 @@ class GROUI_Smart_Assistant_OpenAI {
         }
 
         if ( ! empty( $context['sitemap'] ) && is_array( $context['sitemap'] ) ) {
-            $limit = apply_filters( 'groui_smart_assistant_max_relevant_sitemap', 6, $message, $context, $tokens );
+            $default_limit = $this->normalize_limit( count( $context['sitemap'] ), $context['sitemap'] );
+            $limit         = apply_filters( 'groui_smart_assistant_max_relevant_sitemap', $default_limit, $message, $context, $tokens, $settings );
             $refined['sitemap'] = $this->filter_entries_by_tokens(
                 $context['sitemap'],
                 $tokens,
@@ -273,12 +350,35 @@ class GROUI_Smart_Assistant_OpenAI {
         /**
          * Filter the refined context before it is converted into the system prompt.
          *
-         * @param array  $refined Refined context array.
-         * @param array  $context Original full context array.
-         * @param string $message User message.
-         * @param array  $tokens  Tokens extracted from the user message.
+         * @param array  $refined  Refined context array.
+         * @param array  $context  Original full context array.
+         * @param string $message  User message.
+         * @param array  $tokens   Tokens extracted from the user message.
+         * @param array  $settings Plugin settings array.
          */
-        return apply_filters( 'groui_smart_assistant_refined_context', $refined, $context, $message, $tokens );
+        return apply_filters( 'groui_smart_assistant_refined_context', $refined, $context, $message, $tokens, $settings );
+    }
+
+    /**
+     * Ensure the requested limit is within a sensible range for the provided entries.
+     *
+     * @param int   $requested Requested limit.
+     * @param array $entries   Entries available for the section.
+     *
+     * @return int Normalised limit value.
+     */
+    protected function normalize_limit( $requested, $entries ) {
+        $limit = max( 1, absint( $requested ) );
+
+        if ( is_array( $entries ) ) {
+            $count = count( $entries );
+
+            if ( $count > 0 ) {
+                $limit = min( $limit, $count );
+            }
+        }
+
+        return $limit;
     }
 
     /**

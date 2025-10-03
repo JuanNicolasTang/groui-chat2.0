@@ -62,10 +62,16 @@ class GROUI_Smart_Assistant_Context {
             'site'       => get_bloginfo( 'name' ),
             'tagline'    => get_bloginfo( 'description' ),
             'sitemap'    => $this->get_sitemap_summary( $settings ),
+ codex/add-filter-for-wp_remote_post-args-zyr1kv
+            'pages'      => $this->get_page_summaries( $settings['max_pages'], $settings ),
+            'faqs'       => $this->get_faqs_from_content( $settings ),
+            'products'   => $this->get_product_summaries( $settings['max_products'], $settings ),
+            'categories' => $this->get_taxonomy_summaries( $settings ),
             'pages'      => $this->get_page_summaries( $settings['max_pages'] ),
             'faqs'       => $this->get_faqs_from_content(),
             'products'   => $this->get_product_summaries( $settings['max_products'], $settings ),
             'categories' => $this->get_taxonomy_summaries(),
+ main
         );
 
         // Cache the built context for one hour.
@@ -262,12 +268,35 @@ class GROUI_Smart_Assistant_Context {
      *
      * @return array List of page summaries with `title`, `url` and `excerpt` keys.
      */
-    protected function get_page_summaries( $limit ) {
-        $pages = get_pages( array(
-            'post_status' => 'publish',
-            'sort_column' => 'menu_order',
-            'number'      => absint( $limit ),
-        ) );
+    protected function get_page_summaries( $limit, $settings = array() ) {
+        $settings         = wp_parse_args( $settings, array( 'deep_context_mode' => false ) );
+        $use_full_context = ! empty( $settings['deep_context_mode'] );
+
+        if ( $use_full_context ) {
+            $query_args = array(
+                'post_status' => 'publish',
+                'sort_column' => 'menu_order',
+                'number'      => 0,
+            );
+        } else {
+            $limit = max( 1, absint( $limit ) );
+            $query_args = array(
+                'post_status' => 'publish',
+                'sort_column' => 'menu_order',
+                'number'      => $limit,
+            );
+        }
+
+        /**
+         * Filter the arguments passed to `get_pages()` when building summaries.
+         *
+         * @param array $query_args       Page query arguments.
+         * @param array $settings         Plugin settings array.
+         * @param bool  $use_full_context Whether full-context mode is active.
+         */
+        $query_args = apply_filters( 'groui_smart_assistant_context_page_query_args', $query_args, $settings, $use_full_context );
+
+        $pages = get_pages( $query_args );
 
         $summaries = array();
         foreach ( $pages as $page ) {
@@ -286,13 +315,27 @@ class GROUI_Smart_Assistant_Context {
      *
      * @return array List of FAQs with `question` and `source` keys.
      */
-    protected function get_faqs_from_content() {
+    protected function get_faqs_from_content( $settings = array() ) {
         $faqs  = array();
-        $posts = get_posts( array(
+        $settings         = wp_parse_args( $settings, array( 'deep_context_mode' => false ) );
+        $use_full_context = ! empty( $settings['deep_context_mode'] );
+
+        $query_args = array(
             'post_type'      => array( 'page', 'post' ),
-            'posts_per_page' => 20,
             'post_status'    => 'publish',
-        ) );
+            'posts_per_page' => $use_full_context ? -1 : 20,
+        );
+
+        /**
+         * Filter the arguments passed to `get_posts()` for FAQ extraction.
+         *
+         * @param array $query_args       Post query arguments.
+         * @param array $settings         Plugin settings array.
+         * @param bool  $use_full_context Whether full-context mode is active.
+         */
+        $query_args = apply_filters( 'groui_smart_assistant_context_faq_query_args', $query_args, $settings, $use_full_context );
+
+        $posts = get_posts( $query_args );
 
         foreach ( $posts as $post ) {
             // Match headings (h2–h4) within the post content.
@@ -496,19 +539,42 @@ class GROUI_Smart_Assistant_Context {
      *
      * @return array Associative array keyed by taxonomy name with lists of term summaries.
      */
-    protected function get_taxonomy_summaries() {
+    protected function get_taxonomy_summaries( $settings = array() ) {
+        $settings         = wp_parse_args( $settings, array( 'deep_context_mode' => false ) );
+        $use_full_context = ! empty( $settings['deep_context_mode'] );
+
         $taxonomies = array( 'product_cat', 'product_tag', 'brand', 'category' );
+        /**
+         * Filter the list of taxonomies considered for summaries.
+         *
+         * @param array $taxonomies       Default taxonomy list.
+         * @param array $settings         Plugin settings array.
+         * @param bool  $use_full_context Whether full-context mode is active.
+         */
+        $taxonomies = apply_filters( 'groui_smart_assistant_context_taxonomies', $taxonomies, $settings, $use_full_context );
         $summary    = array();
 
         foreach ( $taxonomies as $taxonomy ) {
             if ( ! taxonomy_exists( $taxonomy ) ) {
                 continue;
             }
-            $terms = get_terms( array(
+            $term_args = array(
                 'taxonomy'   => $taxonomy,
                 'hide_empty' => true,
-                'number'     => 20,
-            ) );
+                'number'     => $use_full_context ? 0 : 20,
+            );
+
+            /**
+             * Filter the arguments passed to `get_terms()` for taxonomy summaries.
+             *
+             * @param array  $term_args        Term query arguments.
+             * @param string $taxonomy         Current taxonomy slug.
+             * @param array  $settings         Plugin settings array.
+             * @param bool   $use_full_context Whether full-context mode is active.
+             */
+            $term_args = apply_filters( 'groui_smart_assistant_context_taxonomy_query_args', $term_args, $taxonomy, $settings, $use_full_context );
+
+            $terms = get_terms( $term_args );
             if ( is_wp_error( $terms ) || empty( $terms ) ) {
                 continue;
             }

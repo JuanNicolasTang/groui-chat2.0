@@ -45,6 +45,10 @@ Tras activar el plugin, aparecerá un botón flotante en la esquina inferior der
 - `groui_smart_assistant_context_maximum_pages`: Establece un tope al número de páginas cargadas en modo de contexto completo (por defecto ilimitado).
 - `groui_smart_assistant_context_maximum_terms`: Fija un máximo de términos por taxonomía cuando se recorre el catálogo completo (por defecto ilimitado).
 
+### Límites de indexado
+
+- En los campos **Máximo de páginas a indexar** y **Máximo de productos a indexar** puedes introducir `0` para desactivar el límite y cargar absolutamente todo el contenido disponible. El asistente conservará igualmente la opción de limitar por relevancia cuando lo necesites.
+
 ### Búsqueda profunda y modo de contexto completo
 
 - En la página de ajustes encontrarás el checkbox **Modo de contexto completo**. Al activarlo, la IA recibirá todas las páginas, productos, FAQs, categorías y URLs recopiladas sin aplicar el recorte por relevancia; además, ahora el contexto se construye en lotes para evitar picos de memoria mientras recorre catálogos grandes, elevando automáticamente los límites de tiempo/memoria cuando sea necesario. El modo profundo cargará el catálogo completo de WooCommerce y consultará todas las páginas publicadas, entradas para FAQs y términos de las taxonomías incluidas (salvo que limites las cifras con los filtros anteriores o los nuevos topes por página/término) para que las respuestas puedan hacer referencia a todo tu contenido publicado.

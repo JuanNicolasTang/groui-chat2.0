@@ -395,7 +395,19 @@ class GROUI_Smart_Assistant_OpenAI {
      * @return int Normalised limit value.
      */
     protected function normalize_limit( $requested, $entries ) {
-        $limit = max( 1, absint( $requested ) );
+        $requested = (int) $requested;
+
+        if ( $requested <= 0 ) {
+            if ( is_array( $entries ) ) {
+                $count = count( $entries );
+
+                return ( $count > 0 ) ? $count : 1;
+            }
+
+            return 1;
+        }
+
+        $limit = $requested;
 
         if ( is_array( $entries ) ) {
             $count = count( $entries );
@@ -405,7 +417,7 @@ class GROUI_Smart_Assistant_OpenAI {
             }
         }
 
-        return $limit;
+        return max( 1, $limit );
     }
 
     /**

@@ -36,6 +36,7 @@ Tras activar el plugin, aparecerá un botón flotante en la esquina inferior der
 - `groui_smart_assistant_context_product_limit`: Ajusta el número de productos que se indexan cuando el contexto se refina por relevancia (modo normal).
 - `groui_smart_assistant_context_maximum_products`: Permite fijar un máximo cuando el modo de contexto completo recopila todo el catálogo (por defecto sin límite).
 - `groui_smart_assistant_context_product_query_args`: Modifica los argumentos de `wc_get_products()` usados para extraer los productos en cualquiera de los modos.
+ codex/add-filter-for-wp_remote_post-args-ru6ifg
 - `groui_smart_assistant_context_page_query_args`: Permite ajustar la consulta de `get_posts()` que recorre las páginas (puedes subir el `posts_per_page` por lote o cambiar el orden si lo prefieres).
 - `groui_smart_assistant_context_faq_query_args`: Modifica la consulta paginada a `get_posts()` durante la extracción de FAQs para aumentar, reducir o filtrar el contenido escaneado en cada pasada.
 - `groui_smart_assistant_context_taxonomies`: Cambia el listado de taxonomías incluidas en el contexto (por defecto categorías de producto, etiquetas, marca y blog).
@@ -48,6 +49,33 @@ Tras activar el plugin, aparecerá un botón flotante en la esquina inferior der
 
 - En la página de ajustes encontrarás el checkbox **Modo de contexto completo**. Al activarlo, la IA recibirá todas las páginas, productos, FAQs, categorías y URLs recopiladas sin aplicar el recorte por relevancia; además, ahora el contexto se construye en lotes para evitar picos de memoria mientras recorre catálogos grandes, elevando automáticamente los límites de tiempo/memoria cuando sea necesario. El modo profundo cargará el catálogo completo de WooCommerce y consultará todas las páginas publicadas, entradas para FAQs y términos de las taxonomías incluidas (salvo que limites las cifras con los filtros anteriores o los nuevos topes por página/término) para que las respuestas puedan hacer referencia a todo tu contenido publicado.
 - Si prefieres mantener el recorte pero con límites más altos, aumenta los campos **Máximo de páginas a indexar** y **Máximo de productos a indexar** desde los ajustes. Esos valores se usarán como límite por defecto al refinar el contexto.
+ codex/add-filter-for-wp_remote_post-args-zyr1kv
+- `groui_smart_assistant_context_page_query_args`: Permite ajustar la consulta de `get_pages()` y, por ejemplo, quitar cualquier tope cuando necesites indexar todas las páginas.
+- `groui_smart_assistant_context_faq_query_args`: Modifica la consulta a `get_posts()` durante la extracción de FAQs para aumentar o reducir el número de entradas analizadas.
+- `groui_smart_assistant_context_taxonomies`: Cambia el listado de taxonomías incluidas en el contexto (por defecto categorías de producto, etiquetas, marca y blog).
+- `groui_smart_assistant_context_taxonomy_query_args`: Ajusta los argumentos de `get_terms()` por taxonomía; en modo de contexto completo el valor `number` se envía como `0` para traer todos los términos a menos que lo limites aquí.
+
+### Búsqueda profunda y modo de contexto completo
+
+- En la página de ajustes encontrarás el checkbox **Modo de contexto completo**. Al activarlo, la IA recibirá todas las páginas, productos, FAQs, categorías y URLs recopiladas sin aplicar el recorte por relevancia; además, ahora cargará el catálogo completo de WooCommerce y consulta todas las páginas publicadas, entradas para FAQs y términos de las taxonomías incluidas (salvo que limites las cifras con los filtros anteriores) para que las respuestas puedan hacer referencia a todo tu contenido publicado.
+- Si prefieres mantener el recorte pero con límites más altos, aumenta los campos **Máximo de páginas a indexar** y **Máximo de productos a indexar** desde los ajustes. Esos valores se usarán como límite por defecto al refinar el contexto.
+
+
+### Búsqueda profunda y modo de contexto completo
+
+- En la página de ajustes encontrarás el checkbox **Modo de contexto completo**. Al activarlo, la IA recibirá todas las páginas, productos, FAQs, categorías y URLs recopiladas sin aplicar el recorte por relevancia; además, ahora cargará el catálogo completo de WooCommerce (salvo que limites la cifra con `groui_smart_assistant_context_maximum_products`) para que las respuestas puedan hacer referencia a todos los productos publicados.
+- Si prefieres mantener el recorte pero con límites más altos, aumenta los campos **Máximo de páginas a indexar** y **Máximo de productos a indexar** desde los ajustes. Esos valores se usarán como límite por defecto al refinar el contexto.
+
+codex/add-filter-for-wp_remote_post-args-jp0hue
+- `groui_smart_assistant_use_full_context`: Te deja forzar (o desactivar) el modo de contexto completo desde código antes de construir el prompt, por ejemplo para habilitarlo solo a ciertos usuarios o en determinados tipos de petición.
+- `groui_smart_assistant_deep_context`: Última oportunidad para modificar el contexto cuando se envía completo al modelo.
+- `groui_smart_assistant_refined_context`: Sigue disponible para ajustar el subconjunto refinado (se invoca también cuando se usa el modo de contexto completo).
+
+### Búsqueda profunda y modo de contexto completo
+
+- En la página de ajustes encontrarás el checkbox **Modo de contexto completo**. Al activarlo, la IA recibirá todas las páginas, productos, FAQs, categorías y URLs recopiladas sin aplicar el recorte por relevancia, lo que ayuda a obtener respuestas más exhaustivas.
+- Si prefieres mantener el recorte pero con límites más altos, aumenta los campos **Máximo de páginas a indexar** y **Máximo de productos a indexar** desde los ajustes. Esos valores se usarán como límite por defecto al refinar el contexto.
+
 
 ### Selección del modelo GPT-5
 

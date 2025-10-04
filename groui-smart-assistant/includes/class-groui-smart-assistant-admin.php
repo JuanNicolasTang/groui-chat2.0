@@ -130,6 +130,21 @@ class GROUI_Smart_Assistant_Admin {
             )
         );
 
+        // OpenAI timeout.
+        add_settings_field(
+            'openai_timeout',
+            __( 'Timeout de OpenAI (segundos)', 'groui-smart-assistant' ),
+            array( $this, 'render_number_field' ),
+            'groui-smart-assistant',
+            'groui_smart_assistant_general',
+            array(
+                'id'          => 'openai_timeout',
+                'min'         => 5,
+                'max'         => 60,
+                'description' => __( 'Tiempo máximo de espera para la respuesta de OpenAI. Contextos muy grandes pueden necesitar ampliar el timeout, pero 60 s es el límite recomendado.', 'groui-smart-assistant' ),
+            )
+        );
+
         // Debug toggle.
         add_settings_field(
             'enable_debug',
@@ -182,6 +197,15 @@ class GROUI_Smart_Assistant_Admin {
             $sanitized['max_products'] = 1000;
         }
 
+        $timeout = isset( $settings['openai_timeout'] ) ? absint( $settings['openai_timeout'] ) : 30;
+        if ( $timeout < 5 ) {
+            $timeout = 5;
+        }
+        if ( $timeout > 60 ) {
+            $timeout = 60;
+        }
+
+        $sanitized['openai_timeout'] = $timeout;
         $sanitized['enable_debug']   = ! empty( $settings['enable_debug'] );
 
         // Flush cached context whenever settings change.

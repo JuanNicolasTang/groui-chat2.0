@@ -83,7 +83,15 @@ class GROUI_Smart_Assistant_OpenAI {
          */
         $body = apply_filters( 'groui_smart_assistant_openai_body', $body, $message, $context );
 
-        $timeout = apply_filters( 'groui_smart_assistant_openai_timeout', 30, $context, $message );
+        $timeout_setting = isset( $settings['openai_timeout'] ) ? absint( $settings['openai_timeout'] ) : 30;
+        if ( $timeout_setting < 5 ) {
+            $timeout_setting = 5;
+        }
+        if ( $timeout_setting > 60 ) {
+            $timeout_setting = 60;
+        }
+
+        $timeout = apply_filters( 'groui_smart_assistant_openai_timeout', $timeout_setting, $context, $message );
 
         $response = wp_remote_post(
             'https://api.openai.com/v1/chat/completions',

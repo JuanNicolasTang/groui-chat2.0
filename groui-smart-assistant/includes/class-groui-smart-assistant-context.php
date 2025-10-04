@@ -371,6 +371,7 @@ class GROUI_Smart_Assistant_Context {
             // Use 0 to represent unlimited pages/products.
             'max_pages'      => 0,
             'max_products'   => 0,
+            'openai_timeout' => 30,
         );
 
         // Merge stored options with defaults, falling back when keys are missing.

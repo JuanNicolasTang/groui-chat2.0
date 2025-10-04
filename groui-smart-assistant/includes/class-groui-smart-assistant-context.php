@@ -68,10 +68,293 @@ class GROUI_Smart_Assistant_Context {
             'categories' => $this->get_taxonomy_summaries(),
         );
 
+        $context = $this->compact_context( $context );
+
         // Cache the built context for one hour.
         set_transient( GROUI_Smart_Assistant::CONTEXT_TRANSIENT, $context, HOUR_IN_SECONDS );
 
         return $context;
+    }
+
+    /**
+     * Ensure the context stays within sane limits for the OpenAI API.
+     *
+     * Applies collection-specific maximums exposed via filters and, if the final
+     * JSON-encoded payload exceeds the configured byte threshold, progressively
+     * trims the lists and/or replaces them with summaries so the payload fits.
+     * Metadata about the pruning is appended under the `_meta` key.
+     *
+     * @param array $context Raw context data.
+     *
+     * @return array Possibly compacted context.
+     */
+    protected function compact_context( array $context ) {
+        $collections = array( 'pages', 'faqs', 'products', 'categories', 'sitemap' );
+        $meta        = array(
+            'pruned'        => false,
+            'pruned_types'  => array(),
+            'limit_bytes'   => 0,
+            'bytes'         => 0,
+        );
+
+        foreach ( $collections as $collection ) {
+            if ( empty( $context[ $collection ] ) || ! is_array( $context[ $collection ] ) ) {
+                continue;
+            }
+
+            $limit = absint( apply_filters( "groui_smart_assistant_max_{$collection}", 0, $context ) );
+
+            if ( $limit < 1 ) {
+                continue;
+            }
+
+            if ( 'categories' === $collection ) {
+                $original = $context[ $collection ];
+                $changed  = array();
+
+                foreach ( $context[ $collection ] as $taxonomy => $terms ) {
+                    if ( ! is_array( $terms ) ) {
+                        continue;
+                    }
+
+                    if ( count( $terms ) > $limit ) {
+                        $context[ $collection ][ $taxonomy ] = array_slice( $terms, 0, $limit, true );
+
+                        if ( isset( $original[ $taxonomy ] ) ) {
+                            $changed[] = $taxonomy;
+                        }
+                    }
+                }
+
+                if ( ! empty( $changed ) ) {
+                    $meta['pruned'] = true;
+                    if ( ! isset( $meta['pruned_types'][ $collection ] ) ) {
+                        $meta['pruned_types'][ $collection ] = array();
+                    }
+                    $meta['pruned_types'][ $collection ][] = array(
+                        'reason'   => 'filter_limit',
+                        'limit'    => $limit,
+                        'taxonomy' => $changed,
+                    );
+                }
+            } else {
+                $original_count = count( $context[ $collection ] );
+
+                if ( $original_count > $limit ) {
+                    $context[ $collection ] = array_slice( $context[ $collection ], 0, $limit, true );
+
+                    $meta['pruned'] = true;
+                    if ( ! isset( $meta['pruned_types'][ $collection ] ) ) {
+                        $meta['pruned_types'][ $collection ] = array();
+                    }
+                    $meta['pruned_types'][ $collection ][] = array(
+                        'reason' => 'filter_limit',
+                        'kept'   => $limit,
+                        'total'  => $original_count,
+                    );
+                }
+            }
+        }
+
+        $threshold = absint( apply_filters( 'groui_smart_assistant_context_max_bytes', 200 * 1024, $context ) );
+        if ( $threshold < 1024 ) {
+            $threshold = 200 * 1024;
+        }
+
+        $meta['limit_bytes'] = $threshold;
+
+        $size = strlen( (string) wp_json_encode( $context ) );
+
+        if ( $size > $threshold ) {
+            $totals = array();
+
+            foreach ( $collections as $collection ) {
+                if ( ! isset( $context[ $collection ] ) || ! is_array( $context[ $collection ] ) ) {
+                    $totals[ $collection ] = 0;
+                    continue;
+                }
+
+                if ( 'categories' === $collection ) {
+                    $totals[ $collection ] = array();
+                    foreach ( $context[ $collection ] as $taxonomy => $terms ) {
+                        $totals[ $collection ][ $taxonomy ] = is_array( $terms ) ? count( $terms ) : 0;
+                    }
+                } else {
+                    $totals[ $collection ] = count( $context[ $collection ] );
+                }
+            }
+
+            $iteration    = 0;
+            $max_attempts = 25;
+
+            while ( $size > $threshold && $iteration < $max_attempts ) {
+                $iteration++;
+                $modified = false;
+
+                foreach ( $collections as $collection ) {
+                    if ( $size <= $threshold ) {
+                        break;
+                    }
+
+                    if ( empty( $context[ $collection ] ) || ! is_array( $context[ $collection ] ) ) {
+                        continue;
+                    }
+
+                    if ( isset( $context[ $collection ]['summary'] ) ) {
+                        continue;
+                    }
+
+                    if ( 'categories' === $collection ) {
+                        $changed_taxonomies = array();
+
+                        foreach ( $context[ $collection ] as $taxonomy => $terms ) {
+                            if ( ! is_array( $terms ) ) {
+                                continue;
+                            }
+
+                            $current_count = count( $terms );
+                            if ( $current_count > 3 ) {
+                                $new_count = max( 1, (int) floor( $current_count / 2 ) );
+
+                                if ( $new_count < $current_count ) {
+                                    $context[ $collection ][ $taxonomy ] = array_slice( $terms, 0, $new_count, true );
+                                    $changed_taxonomies[ $taxonomy ]      = $new_count;
+                                }
+                            }
+                        }
+
+                        if ( ! empty( $changed_taxonomies ) ) {
+                            $meta['pruned'] = true;
+                            if ( ! isset( $meta['pruned_types'][ $collection ] ) ) {
+                                $meta['pruned_types'][ $collection ] = array();
+                            }
+                            $meta['pruned_types'][ $collection ][] = array(
+                                'reason' => 'size_limit',
+                                'kept'   => $changed_taxonomies,
+                                'total'  => $totals[ $collection ],
+                            );
+
+                            $modified = true;
+                            $size     = strlen( (string) wp_json_encode( $context ) );
+                        }
+                    } else {
+                        $current_count = count( $context[ $collection ] );
+                        if ( $current_count > 3 ) {
+                            $new_count = max( 1, (int) floor( $current_count / 2 ) );
+
+                            if ( $new_count < $current_count ) {
+                                $context[ $collection ] = array_slice( $context[ $collection ], 0, $new_count, true );
+
+                                $meta['pruned'] = true;
+                                if ( ! isset( $meta['pruned_types'][ $collection ] ) ) {
+                                    $meta['pruned_types'][ $collection ] = array();
+                                }
+                                $meta['pruned_types'][ $collection ][] = array(
+                                    'reason' => 'size_limit',
+                                    'kept'   => $new_count,
+                                    'total'  => $totals[ $collection ],
+                                );
+
+                                $modified = true;
+                                $size     = strlen( (string) wp_json_encode( $context ) );
+                            }
+                        }
+                    }
+                }
+
+                if ( $size <= $threshold ) {
+                    break;
+                }
+
+                if ( ! $modified ) {
+                    foreach ( $collections as $collection ) {
+                        if ( $size <= $threshold ) {
+                            break;
+                        }
+
+                        if ( empty( $context[ $collection ] ) || ! is_array( $context[ $collection ] ) ) {
+                            continue;
+                        }
+
+                        $summary_payload = $this->build_collection_summary( $collection, $context[ $collection ], $totals[ $collection ] );
+
+                        if ( null === $summary_payload ) {
+                            continue;
+                        }
+
+                        $context[ $collection ] = array( 'summary' => $summary_payload );
+
+                        $meta['pruned'] = true;
+                        if ( ! isset( $meta['pruned_types'][ $collection ] ) ) {
+                            $meta['pruned_types'][ $collection ] = array();
+                        }
+                        $meta['pruned_types'][ $collection ][] = array(
+                            'reason' => 'summary',
+                            'total'  => $totals[ $collection ],
+                        );
+
+                        $modified = true;
+                        $size     = strlen( (string) wp_json_encode( $context ) );
+                    }
+                }
+
+                if ( ! $modified ) {
+                    break;
+                }
+            }
+        }
+
+        $meta['bytes'] = $size;
+
+        $context['_meta'] = $meta;
+
+        return $context;
+    }
+
+    /**
+     * Build a compact summary for a specific collection when pruning is required.
+     *
+     * @param string     $collection Collection name (pages, faqs, products, categories, sitemap).
+     * @param array      $data       Collection data.
+     * @param int|array  $totals     Original totals captured before trimming.
+     *
+     * @return array|null Summary payload or null if the collection cannot be summarised.
+     */
+    protected function build_collection_summary( $collection, $data, $totals ) {
+        if ( ! is_array( $data ) ) {
+            return null;
+        }
+
+        if ( 'categories' === $collection ) {
+            $total_taxonomies = count( $data );
+            $total_terms      = 0;
+            $samples          = array();
+
+            foreach ( $data as $taxonomy => $terms ) {
+                $term_list = is_array( $terms ) ? $terms : array();
+                $term_count = count( $term_list );
+                $total_terms += $term_count;
+
+                $samples[] = array(
+                    'taxonomy' => $taxonomy,
+                    'total'    => $term_count,
+                    'terms'    => array_slice( $term_list, 0, min( 3, $term_count ), true ),
+                );
+            }
+
+            return array(
+                'total_taxonomies' => $total_taxonomies,
+                'total_terms'      => $total_terms,
+                'samples'          => array_slice( $samples, 0, 3 ),
+            );
+        }
+
+        $sample = array_slice( $data, 0, min( 3, count( $data ) ), true );
+
+        return array(
+            'total'  => is_array( $totals ) ? array_sum( array_map( 'intval', $totals ) ) : (int) $totals,
+            'sample' => $sample,
+        );
     }
 
     /**

@@ -328,30 +328,37 @@ class GROUI_Smart_Assistant_Context {
         $page      = 1;
         $collected = array();
 
-        // Build base arguments shared across batches.  Avoid expensive random
-        // ordering in SQL; we'll randomize the final collection in PHP.  Fetch
-        // only published, in stock products.
+        // Allow preserving the legacy behaviour where product selections were
+        // randomized every time the context was rebuilt.  This keeps the
+        // optimised pagination logic while avoiding the expensive SQL RAND()
+        // for large catalogues.
+        $should_randomize = apply_filters( 'groui_smart_assistant_randomize_products', true, $limit );
+
+        // Build base arguments shared across batches.  Fetch only published,
+        // in-stock products to mirror the legacy context builder.
         $base_args = array(
             'status'       => 'publish',
             'stock_status' => 'instock',
-            // Sort by ID ascending to ensure deterministic pagination.  We'll
-            // shuffle afterwards to achieve variety.
-            'orderby'      => 'id',
-            'order'        => 'ASC',
         );
 
         if ( $limit > 0 ) {
-            // Constrain to the requested number of products.  Use a single call
-            // with limit equal to $limit; no need for batching when limited.
+            // Constrain to the requested number of products.  To preserve the
+            // historic random product sampling we use orderby=rand only when a
+            // finite limit is requested.  This mirrors the legacy behaviour
+            // without impacting the unbounded pagination path.
             $args = $base_args;
             $args['limit'] = $limit;
+
+            if ( $should_randomize ) {
+                $args['orderby'] = 'rand';
+            } else {
+                $args['orderby'] = 'id';
+                $args['order']   = 'ASC';
+            }
+
             $products = wc_get_products( $args );
 
             foreach ( $products as $product ) {
-                // Only include purchasable and in stock products.
-                if ( ! $product->is_purchasable() || ! $product->is_in_stock() ) {
-                    continue;
-                }
                 $collected[] = array(
                     'id'         => $product->get_id(),
                     'name'       => $product->get_name(),
@@ -365,6 +372,9 @@ class GROUI_Smart_Assistant_Context {
         } else {
             // Unlimited: iterate through all products in batches.  We'll
             // increment the page parameter until no more products are returned.
+            $base_args['orderby'] = 'id';
+            $base_args['order']   = 'ASC';
+
             do {
                 $args            = $base_args;
                 $args['limit']   = $per_page;
@@ -376,10 +386,6 @@ class GROUI_Smart_Assistant_Context {
                 }
 
                 foreach ( $products as $product ) {
-                    // Only include purchasable and in stock products.
-                    if ( ! $product->is_purchasable() || ! $product->is_in_stock() ) {
-                        continue;
-                    }
                     $collected[] = array(
                         'id'         => $product->get_id(),
                         'name'       => $product->get_name(),
@@ -402,8 +408,11 @@ class GROUI_Smart_Assistant_Context {
             } while ( true );
         }
 
-        // Shuffle the collected products to provide variety in the context.
-        if ( count( $collected ) > 1 ) {
+        // Shuffle the collected products to provide variety in the context
+        // when randomisation is enabled.  Unlimited contexts are shuffled in
+        // PHP to avoid expensive RAND() queries while still giving assistants a
+        // varied set of examples.
+        if ( $should_randomize && count( $collected ) > 1 ) {
             shuffle( $collected );
         }
 

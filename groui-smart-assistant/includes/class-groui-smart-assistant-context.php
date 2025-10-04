@@ -386,36 +386,114 @@ class GROUI_Smart_Assistant_Context {
      */
     protected function get_sitemap_summary( $settings ) {
         $sitemap_url = ! empty( $settings['sitemap_url'] ) ? esc_url_raw( $settings['sitemap_url'] ) : home_url( '/sitemap.xml' );
-        $response    = wp_remote_get( $sitemap_url, array( 'timeout' => 15 ) );
+        $max_urls    = absint( apply_filters( 'groui_smart_assistant_max_sitemap_urls', 500, $settings ) );
+        $max_files   = absint( apply_filters( 'groui_smart_assistant_max_sitemap_files', 25, $settings ) );
+        $debug       = ! empty( $settings['enable_debug'] );
 
-        if ( is_wp_error( $response ) ) {
-            return array();
-        }
+        $urls       = array();
+        $queue      = array( $sitemap_url );
+        $processed  = array();
+        $fetched    = 0;
 
-        $body = wp_remote_retrieve_body( $response );
-        if ( empty( $body ) ) {
-            return array();
-        }
+        while ( ! empty( $queue ) ) {
+            if ( $max_urls > 0 && count( $urls ) >= $max_urls ) {
+                break;
+            }
 
-        libxml_use_internal_errors( true );
-        $xml = simplexml_load_string( $body );
-        libxml_clear_errors();
+            if ( $max_files > 0 && $fetched >= $max_files ) {
+                break;
+            }
 
-        if ( ! $xml ) {
-            return array();
-        }
+            $current = array_shift( $queue );
 
-        $urls = array();
-        foreach ( $xml->url as $entry ) {
-            $loc = isset( $entry->loc ) ? (string) $entry->loc : '';
-            if ( empty( $loc ) ) {
+            if ( isset( $processed[ $current ] ) ) {
                 continue;
             }
 
-            $urls[] = array(
-                'url'     => $loc,
-                'lastmod' => isset( $entry->lastmod ) ? (string) $entry->lastmod : '',
-            );
+            $processed[ $current ] = true;
+            $fetched++;
+
+            $response = wp_remote_get( $current, array( 'timeout' => 15 ) );
+
+            if ( is_wp_error( $response ) ) {
+                if ( $debug ) {
+                    error_log( sprintf( '[GROUI Smart Assistant] Error obteniendo el sitemap %s: %s', $current, $response->get_error_message() ) );
+                }
+
+                return $urls;
+            }
+
+            $body = wp_remote_retrieve_body( $response );
+
+            if ( empty( $body ) ) {
+                if ( $debug ) {
+                    error_log( sprintf( '[GROUI Smart Assistant] Respuesta vacía al obtener el sitemap %s', $current ) );
+                }
+
+                return $urls;
+            }
+
+            $previous_libxml_state = libxml_use_internal_errors( true );
+            $xml                   = simplexml_load_string( $body );
+
+            if ( ! $xml ) {
+                if ( $debug ) {
+                    $libxml_errors = libxml_get_errors();
+                    $message       = ! empty( $libxml_errors ) ? trim( $libxml_errors[0]->message ) : 'Error desconocido al parsear XML.';
+                    error_log( sprintf( '[GROUI Smart Assistant] Error parseando el sitemap %s: %s', $current, $message ) );
+                }
+
+                libxml_clear_errors();
+                libxml_use_internal_errors( $previous_libxml_state );
+
+                return $urls;
+            }
+
+            libxml_clear_errors();
+            libxml_use_internal_errors( $previous_libxml_state );
+
+            $root = strtolower( $xml->getName() );
+
+            if ( 'sitemapindex' === $root || isset( $xml->sitemap ) ) {
+                foreach ( $xml->sitemap as $child ) {
+                    if ( $max_files > 0 && ( $fetched + count( $queue ) ) >= $max_files ) {
+                        break;
+                    }
+
+                    $loc = isset( $child->loc ) ? trim( (string) $child->loc ) : '';
+
+                    if ( empty( $loc ) || isset( $processed[ $loc ] ) ) {
+                        continue;
+                    }
+
+                    $queue[] = $loc;
+                }
+
+                continue;
+            }
+
+            if ( 'urlset' === $root || isset( $xml->url ) ) {
+                foreach ( $xml->url as $entry ) {
+                    if ( $max_urls > 0 && count( $urls ) >= $max_urls ) {
+                        break 2;
+                    }
+
+                    $loc = isset( $entry->loc ) ? trim( (string) $entry->loc ) : '';
+
+                    if ( empty( $loc ) ) {
+                        continue;
+                    }
+
+                    $urls[] = array(
+                        'url'     => $loc,
+                        'lastmod' => isset( $entry->lastmod ) ? (string) $entry->lastmod : '',
+                    );
+
+                    if ( $max_urls > 0 && count( $urls ) >= $max_urls ) {
+                        break 2;
+                    }
+                }
+            }
         }
 
         return $urls;

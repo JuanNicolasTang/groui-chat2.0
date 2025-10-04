@@ -94,7 +94,7 @@ class GROUI_Smart_Assistant_Admin {
             'groui_smart_assistant_general',
             array(
                 'id'          => 'sitemap_url',
-                'description' => __( 'Se usará para extraer conocimiento de la web.', 'groui-smart-assistant' ),
+                'description' => __( 'Se usará para extraer conocimiento de la web. Soporta índices de sitemap y respeta límites configurables para evitar contextos enormes.', 'groui-smart-assistant' ),
             )
         );
 

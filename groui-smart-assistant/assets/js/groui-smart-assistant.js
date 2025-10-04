@@ -9,10 +9,30 @@
  */
 
 (function ($) {
-  const root = document.getElementById('groui-smart-assistant-root');
-  if (!root) {
-    return;
+  // Ensure the root container exists even if it's not present yet when this script runs.
+  function ensureRoot() {
+    let el = document.getElementById('groui-smart-assistant-root');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'groui-smart-assistant-root';
+      el.className = 'groui-smart-assistant-root';
+      // Live region to announce updates for assistive technologies.
+      el.setAttribute('aria-live', 'polite');
+      document.body.appendChild(el);
+    }
+    return el;
   }
+
+  // Read localized settings from the global object if available.  Provide
+  // fallbacks to WordPress globals or sensible defaults so the script
+  // continues to work even when GROUISmartAssistant is undefined.
+  const GSA = window.GROUISmartAssistant || {};
+  const ajaxUrl = GSA.ajaxUrl || window.ajaxurl || '/wp-admin/admin-ajax.php';
+  const nonce   = GSA.nonce || '';
+  const hasWooFlag = !!GSA.hasWooCommerce;
+
+  // Always work with a root element.  Create it if necessary.
+  const root = ensureRoot();
 
   // Identifier for the dialog element.
   const widgetId = 'gsa-dialog';
@@ -22,7 +42,8 @@
   const state = {
     open: false,
     loading: false,
-    hasWooCommerce: Boolean(GROUISmartAssistant.hasWooCommerce),
+    // Determine WooCommerce availability using the flag computed above.
+    hasWooCommerce: hasWooFlag,
     messages: [],
     badge: 0,
     greeted: false,
@@ -389,10 +410,10 @@
       return;
     }
     $.post(
-      GROUISmartAssistant.ajaxUrl,
+      ajaxUrl,
       {
         action: 'groui_smart_assistant_products',
-        nonce: GROUISmartAssistant.nonce,
+        nonce: nonce,
         query: query || '',
       },
       (response) => {
@@ -412,10 +433,10 @@
   function submitMessage(content) {
     setLoading(true);
     $.post(
-      GROUISmartAssistant.ajaxUrl,
+      ajaxUrl,
       {
         action: 'groui_smart_assistant_chat',
-        nonce: GROUISmartAssistant.nonce,
+        nonce: nonce,
         message: content,
       }
     )

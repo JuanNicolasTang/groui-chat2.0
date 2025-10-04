@@ -754,15 +754,7 @@ class GROUI_Smart_Assistant_Context {
             $products = wc_get_products( $args );
 
             foreach ( $products as $product ) {
-                $collected[] = array(
-                    'id'         => $product->get_id(),
-                    'name'       => $product->get_name(),
-                    'price'      => wp_strip_all_tags( $product->get_price_html() ),
-                    'permalink'  => $product->get_permalink(),
-                    'image'      => wp_get_attachment_image_url( $product->get_image_id(), 'medium' ),
-                    'short_desc' => wp_trim_words( wp_strip_all_tags( $product->get_short_description() ), 30 ),
-                    'categories' => array_map( 'intval', $product->get_category_ids() ),
-                );
+                $collected[] = $this->map_product_to_summary( $product );
             }
         } else {
             // Unlimited: iterate through all products in batches.  We'll
@@ -781,15 +773,7 @@ class GROUI_Smart_Assistant_Context {
                 }
 
                 foreach ( $products as $product ) {
-                    $collected[] = array(
-                        'id'         => $product->get_id(),
-                        'name'       => $product->get_name(),
-                        'price'      => wp_strip_all_tags( $product->get_price_html() ),
-                        'permalink'  => $product->get_permalink(),
-                        'image'      => wp_get_attachment_image_url( $product->get_image_id(), 'medium' ),
-                        'short_desc' => wp_trim_words( wp_strip_all_tags( $product->get_short_description() ), 30 ),
-                        'categories' => array_map( 'intval', $product->get_category_ids() ),
-                    );
+                    $collected[] = $this->map_product_to_summary( $product );
                 }
 
                 $page++;
@@ -812,6 +796,58 @@ class GROUI_Smart_Assistant_Context {
         }
 
         return $collected;
+    }
+
+    /**
+     * Normalize a WooCommerce product into the structure exposed to the assistant.
+     *
+     * @param WC_Product $product Product instance.
+     *
+     * @return array
+     */
+    protected function map_product_to_summary( WC_Product $product ) {
+        return array(
+            'id'           => $product->get_id(),
+            'name'         => $product->get_name(),
+            'price'        => wp_strip_all_tags( $product->get_price_html() ),
+            'price_amount' => $this->get_product_price_amount( $product ),
+            'permalink'    => $product->get_permalink(),
+            'image'        => wp_get_attachment_image_url( $product->get_image_id(), 'medium' ),
+            'short_desc'   => wp_trim_words( wp_strip_all_tags( $product->get_short_description() ), 30 ),
+            'categories'   => array_map( 'intval', $product->get_category_ids() ),
+        );
+    }
+
+    /**
+     * Return the numeric price of a product suitable for budget filtering.
+     *
+     * @param WC_Product $product Product instance.
+     *
+     * @return float|null
+     */
+    protected function get_product_price_amount( WC_Product $product ) {
+        $price = $product->get_price();
+
+        if ( '' === $price || null === $price ) {
+            $price = $product->get_regular_price();
+        }
+
+        if ( '' === $price || null === $price ) {
+            return null;
+        }
+
+        if ( function_exists( 'wc_get_price_to_display' ) ) {
+            $display_price = wc_get_price_to_display( $product );
+        } else {
+            $display_price = $price;
+        }
+
+        if ( function_exists( 'wc_format_decimal' ) ) {
+            $decimals = function_exists( 'wc_get_price_decimals' ) ? wc_get_price_decimals() : 2;
+            $display_price = wc_format_decimal( $display_price, $decimals );
+        }
+
+        return (float) $display_price;
     }
 
     /**

@@ -172,6 +172,34 @@ class GROUI_Smart_Assistant_Frontend {
         }
         // If no products were suggested or none were purchasable, perform a search.
         if ( empty( $products ) ) {
+            $brand_term_ids = array();
+            $brand_taxonomies = array();
+
+            if ( ! empty( $query ) ) {
+                $candidate_taxonomies = array( 'product_brand', 'brand' );
+
+                foreach ( $candidate_taxonomies as $taxonomy ) {
+                    if ( taxonomy_exists( $taxonomy ) ) {
+                        $brand_taxonomies[] = $taxonomy;
+                    }
+                }
+
+                if ( ! empty( $brand_taxonomies ) ) {
+                    $matching_terms = get_terms(
+                        array(
+                            'taxonomy'   => $brand_taxonomies,
+                            'hide_empty' => false,
+                            'name__like' => $query,
+                            'fields'     => 'ids',
+                        )
+                    );
+
+                    if ( ! is_wp_error( $matching_terms ) && ! empty( $matching_terms ) ) {
+                        $brand_term_ids = array_map( 'absint', (array) $matching_terms );
+                    }
+                }
+            }
+
             $args = array(
                 'status'  => 'publish',
                 'limit'   => 10,
@@ -179,6 +207,19 @@ class GROUI_Smart_Assistant_Frontend {
             );
             if ( ! empty( $query ) ) {
                 $args['s'] = $query;
+            }
+            if ( ! empty( $brand_term_ids ) && ! empty( $brand_taxonomies ) ) {
+                $tax_query = array( 'relation' => 'OR' );
+
+                foreach ( $brand_taxonomies as $taxonomy ) {
+                    $tax_query[] = array(
+                        'taxonomy' => $taxonomy,
+                        'field'    => 'term_id',
+                        'terms'    => $brand_term_ids,
+                    );
+                }
+
+                $args['tax_query'] = $tax_query;
             }
             $products = wc_get_products( $args );
 
@@ -188,6 +229,24 @@ class GROUI_Smart_Assistant_Frontend {
                     'limit'   => 10,
                     'orderby' => 'popularity',
                 );
+
+                if ( ! empty( $query ) ) {
+                    $fallback_args['s'] = $query;
+                }
+
+                if ( ! empty( $brand_term_ids ) && ! empty( $brand_taxonomies ) ) {
+                    $tax_query = array( 'relation' => 'OR' );
+
+                    foreach ( $brand_taxonomies as $taxonomy ) {
+                        $tax_query[] = array(
+                            'taxonomy' => $taxonomy,
+                            'field'    => 'term_id',
+                            'terms'    => $brand_term_ids,
+                        );
+                    }
+
+                    $fallback_args['tax_query'] = $tax_query;
+                }
 
                 /**
                  * Allow developers to modify the fallback product query.

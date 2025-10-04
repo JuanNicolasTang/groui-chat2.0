@@ -47,12 +47,16 @@ class GROUI_Smart_Assistant_OpenAI {
             return new WP_Error( 'missing_api_key', __( 'Falta la API key de OpenAI.', 'groui-smart-assistant' ) );
         }
 
-        $meta = isset( $context['_meta'] ) && is_array( $context['_meta'] ) ? $context['_meta'] : array();
+        $meta     = isset( $context['_meta'] ) && is_array( $context['_meta'] ) ? $context['_meta'] : array();
+        $warnings = isset( $meta['warnings'] ) && is_array( $meta['warnings'] ) ? $meta['warnings'] : array();
+        $errors   = isset( $meta['errors'] ) && is_array( $meta['errors'] ) ? $meta['errors'] : array();
 
-        if ( ! empty( $meta['pruned'] ) ) {
-            $error_message = __( 'El contexto del sitio se recortó porque excedía los límites de la API. Reduce los topes de páginas o productos, o ajusta tus filtros antes de volver a intentarlo.', 'groui-smart-assistant' );
+        if ( ! empty( $warnings ) ) {
+            do_action( 'groui_smart_assistant_context_warnings', $warnings, $context );
+        }
 
-            return new WP_Error( 'context_pruned', $error_message, $meta );
+        if ( ! empty( $errors ) ) {
+            do_action( 'groui_smart_assistant_context_errors', $errors, $context );
         }
 
         $system_prompt = $this->build_system_prompt( $context );
@@ -120,12 +124,18 @@ class GROUI_Smart_Assistant_OpenAI {
                 $hint     = __( 'Verifica que el nombre del modelo sea exactamente gpt-5, gpt-5-mini o gpt-5-nano y que tu cuenta tenga acceso activo.', 'groui-smart-assistant' );
                 $message .= ' ' . $hint;
             }
-            return new WP_Error( 'openai_error', $message, $data );
+            return new WP_Error( 'openai_error', $message, array(
+                'response' => $data,
+                'meta'     => $meta,
+            ) );
         }
 
         // Ensure a message was returned.
         if ( empty( $data['choices'][0]['message']['content'] ) ) {
-            return new WP_Error( 'empty_response', __( 'OpenAI no devolvió contenido.', 'groui-smart-assistant' ), $data );
+            return new WP_Error( 'empty_response', __( 'OpenAI no devolvió contenido.', 'groui-smart-assistant' ), array(
+                'response' => $data,
+                'meta'     => $meta,
+            ) );
         }
 
         $content = $data['choices'][0]['message']['content'];
@@ -141,6 +151,7 @@ class GROUI_Smart_Assistant_OpenAI {
         return array(
             'raw'     => $data,
             'content' => $parsed,
+            'meta'    => $meta,
         );
     }
 

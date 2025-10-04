@@ -91,11 +91,13 @@ class GROUI_Smart_Assistant_Context {
     protected function compact_context( array $context ) {
         $collections = array( 'pages', 'faqs', 'products', 'categories', 'sitemap' );
         $meta        = array(
-            'pruned'        => false,
+            'warnings'      => array(),
+            'errors'        => array(),
             'pruned_types'  => array(),
             'limit_bytes'   => 0,
             'bytes'         => 0,
         );
+        $pruned      = false;
 
         foreach ( $collections as $collection ) {
             if ( empty( $context[ $collection ] ) || ! is_array( $context[ $collection ] ) ) {
@@ -127,7 +129,7 @@ class GROUI_Smart_Assistant_Context {
                 }
 
                 if ( ! empty( $changed ) ) {
-                    $meta['pruned'] = true;
+                    $pruned = true;
                     if ( ! isset( $meta['pruned_types'][ $collection ] ) ) {
                         $meta['pruned_types'][ $collection ] = array();
                     }
@@ -143,7 +145,7 @@ class GROUI_Smart_Assistant_Context {
                 if ( $original_count > $limit ) {
                     $context[ $collection ] = array_slice( $context[ $collection ], 0, $limit, true );
 
-                    $meta['pruned'] = true;
+                    $pruned = true;
                     if ( ! isset( $meta['pruned_types'][ $collection ] ) ) {
                         $meta['pruned_types'][ $collection ] = array();
                     }
@@ -224,7 +226,7 @@ class GROUI_Smart_Assistant_Context {
                         }
 
                         if ( ! empty( $changed_taxonomies ) ) {
-                            $meta['pruned'] = true;
+                            $pruned = true;
                             if ( ! isset( $meta['pruned_types'][ $collection ] ) ) {
                                 $meta['pruned_types'][ $collection ] = array();
                             }
@@ -245,7 +247,7 @@ class GROUI_Smart_Assistant_Context {
                             if ( $new_count < $current_count ) {
                                 $context[ $collection ] = array_slice( $context[ $collection ], 0, $new_count, true );
 
-                                $meta['pruned'] = true;
+                                $pruned = true;
                                 if ( ! isset( $meta['pruned_types'][ $collection ] ) ) {
                                     $meta['pruned_types'][ $collection ] = array();
                                 }
@@ -284,7 +286,7 @@ class GROUI_Smart_Assistant_Context {
 
                         $context[ $collection ] = array( 'summary' => $summary_payload );
 
-                        $meta['pruned'] = true;
+                        $pruned = true;
                         if ( ! isset( $meta['pruned_types'][ $collection ] ) ) {
                             $meta['pruned_types'][ $collection ] = array();
                         }
@@ -305,6 +307,37 @@ class GROUI_Smart_Assistant_Context {
         }
 
         $meta['bytes'] = $size;
+
+        $has_content = false;
+
+        if ( ! empty( $context['site'] ) || ! empty( $context['tagline'] ) ) {
+            $has_content = true;
+        }
+
+        if ( ! $has_content ) {
+            foreach ( $collections as $collection ) {
+                if ( ! empty( $context[ $collection ] ) ) {
+                    $has_content = true;
+                    break;
+                }
+            }
+        }
+
+        if ( $pruned && ! empty( $meta['pruned_types'] ) ) {
+            $meta['warnings'][] = array(
+                'code'    => 'context_pruned',
+                'message' => __( 'El contexto del sitio se recortó para cumplir los límites configurados.', 'groui-smart-assistant' ),
+                'types'   => $meta['pruned_types'],
+            );
+        }
+
+        if ( ! $has_content ) {
+            $meta['errors'][] = array(
+                'code'    => 'context_empty',
+                'message' => __( 'El contexto se quedó vacío después de aplicar los límites.', 'groui-smart-assistant' ),
+                'types'   => $meta['pruned_types'],
+            );
+        }
 
         $context['_meta'] = $meta;
 

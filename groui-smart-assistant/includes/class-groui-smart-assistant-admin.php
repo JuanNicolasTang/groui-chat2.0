@@ -107,9 +107,11 @@ class GROUI_Smart_Assistant_Admin {
             'groui_smart_assistant_general',
             array(
                 'id'          => 'max_pages',
-                'description' => __( 'Límite de páginas para el contexto.', 'groui-smart-assistant' ),
-                'min'         => 5,
-                'max'         => 50,
+                // Inform administrators that 0 means unlimited and values are capped at 1000.  This
+                // clarifies the behaviour of the number field in the UI.
+                'description' => __( 'Límite de páginas para el contexto. Usa 0 para ilimitado (hasta un máximo de 1000).', 'groui-smart-assistant' ),
+                'min'         => 0,
+                'max'         => 1000,
             )
         );
 
@@ -122,9 +124,10 @@ class GROUI_Smart_Assistant_Admin {
             'groui_smart_assistant_general',
             array(
                 'id'          => 'max_products',
-                'description' => __( 'Limita la cantidad de productos que se envían al modelo.', 'groui-smart-assistant' ),
-                'min'         => 5,
-                'max'         => 50,
+                // Clarify the behaviour for unlimited values and the cap used to protect memory usage.
+                'description' => __( 'Limita la cantidad de productos que se envían al modelo. Usa 0 para ilimitado (hasta un máximo de 1000).', 'groui-smart-assistant' ),
+                'min'         => 0,
+                'max'         => 1000,
             )
         );
 
@@ -169,8 +172,17 @@ class GROUI_Smart_Assistant_Admin {
 
         $sanitized['model']        = $model;
         $sanitized['sitemap_url']    = isset( $settings['sitemap_url'] ) ? esc_url_raw( $settings['sitemap_url'] ) : home_url( '/sitemap.xml' );
-        $sanitized['max_pages']      = isset( $settings['max_pages'] ) ? min( 50, max( 5, absint( $settings['max_pages'] ) ) ) : 12;
-        $sanitized['max_products']   = isset( $settings['max_products'] ) ? min( 50, max( 5, absint( $settings['max_products'] ) ) ) : 12;
+
+        // Allow unlimited pages/products with 0 value. Cap at max values to prevent unbounded memory usage.
+        $sanitized['max_pages']    = isset( $settings['max_pages'] ) ? absint( $settings['max_pages'] ) : 0;
+        $sanitized['max_products'] = isset( $settings['max_products'] ) ? absint( $settings['max_products'] ) : 0;
+        if ( $sanitized['max_pages'] > 1000 ) {
+            $sanitized['max_pages'] = 1000;
+        }
+        if ( $sanitized['max_products'] > 1000 ) {
+            $sanitized['max_products'] = 1000;
+        }
+
         $sanitized['enable_debug']   = ! empty( $settings['enable_debug'] );
 
         // Flush cached context whenever settings change.

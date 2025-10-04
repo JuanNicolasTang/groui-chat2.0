@@ -21,23 +21,6 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// Definir constantes del plugin solo si no están definidas.
-// Definir la versión del plugin.  Esta constante se utiliza para el control
-// de versiones al encolar los assets (scripts y estilos) y debe coincidir
-// con la cabecera.  Al cambiar cualquier asset, actualice este número para
-// forzar que los navegadores recarguen los archivos.
-if ( ! defined( 'GROUI_SMART_ASSISTANT_VERSION' ) ) {
-    define( 'GROUI_SMART_ASSISTANT_VERSION', '2.3.0' );
-}
-
-if ( ! defined( 'GROUI_SMART_ASSISTANT_PATH' ) ) {
-    define( 'GROUI_SMART_ASSISTANT_PATH', plugin_dir_path( __FILE__ ) );
-}
-
-if ( ! defined( 'GROUI_SMART_ASSISTANT_URL' ) ) {
-    define( 'GROUI_SMART_ASSISTANT_URL', plugin_dir_url( __FILE__ ) );
-}
-
 /*
  * Fallback definitions for WordPress helper functions.
  *
@@ -48,6 +31,8 @@ if ( ! defined( 'GROUI_SMART_ASSISTANT_URL' ) ) {
  * file and inspect constants. In a normal WordPress installation these
  * definitions are ignored because the functions already exist.
  */
+$groui_smart_assistant_add_action_exists = function_exists( 'add_action' );
+
 if ( ! function_exists( 'plugin_dir_path' ) ) {
     function plugin_dir_path( $file ) {
         return dirname( $file ) . '/';
@@ -74,11 +59,28 @@ if ( ! function_exists( 'add_action' ) ) {
     }
 }
 
+// Definir constantes del plugin solo si no están definidas.
+// Definir la versión del plugin.  Esta constante se utiliza para el control
+// de versiones al encolar los assets (scripts y estilos) y debe coincidir
+// con la cabecera.  Al cambiar cualquier asset, actualice este número para
+// forzar que los navegadores recarguen los archivos.
+if ( ! defined( 'GROUI_SMART_ASSISTANT_VERSION' ) ) {
+    define( 'GROUI_SMART_ASSISTANT_VERSION', '2.3.0' );
+}
+
+if ( ! defined( 'GROUI_SMART_ASSISTANT_PATH' ) ) {
+    define( 'GROUI_SMART_ASSISTANT_PATH', plugin_dir_path( __FILE__ ) );
+}
+
+if ( ! defined( 'GROUI_SMART_ASSISTANT_URL' ) ) {
+    define( 'GROUI_SMART_ASSISTANT_URL', plugin_dir_url( __FILE__ ) );
+}
+
 // Cargar la clase principal del plugin.
 // Solo incluir y ejecutar el plugin si WordPress está cargado.  Comprobamos
 // funciones básicas como add_action() para determinar si se trata de un
 // entorno WordPress.
-if ( function_exists( 'add_action' ) ) {
+if ( $groui_smart_assistant_add_action_exists ) {
     require_once GROUI_SMART_ASSISTANT_PATH . 'includes/class-groui-smart-assistant.php';
 
     /**

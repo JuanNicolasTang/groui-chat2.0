@@ -226,30 +226,86 @@ class GROUI_Smart_Assistant_Context {
      * @return array List of FAQs with `question` and `source` keys.
      */
     protected function get_faqs_from_content() {
-        $faqs  = array();
-        $posts = get_posts( array(
-            'post_type'      => array( 'page', 'post' ),
-            'posts_per_page' => -1, // Fetch all posts and pages.
-            'post_status'    => 'publish',
-        ) );
+        $faqs       = array();
+        $paged      = 1;
+        $reached_max = false;
 
-        foreach ( $posts as $post ) {
-            // Match headings (h2–h4) within the post content.
-            preg_match_all( '/<h[2-4][^>]*>(.*?)<\/h[2-4]>/', $post->post_content, $matches );
-            if ( empty( $matches[1] ) ) {
-                continue;
+        $batch_size = absint( apply_filters( 'groui_smart_assistant_faq_batch_size', 200 ) );
+        if ( $batch_size < 1 ) {
+            $batch_size = 200;
+        }
+
+        $max_faqs = absint( apply_filters( 'groui_smart_assistant_max_faqs', 0 ) );
+
+        $query_args = array(
+            'post_type'      => array( 'page', 'post' ),
+            'post_status'    => 'publish',
+            'orderby'        => 'ID',
+            'order'          => 'ASC',
+            'fields'         => 'ids',
+            'posts_per_page' => $batch_size,
+        );
+
+        do {
+            $query_args['paged'] = $paged;
+
+            $query = new WP_Query( $query_args );
+
+            if ( ! $query->have_posts() ) {
+                break;
             }
-            foreach ( $matches[1] as $heading ) {
-                $clean = wp_strip_all_tags( $heading );
-                if ( empty( $clean ) ) {
+
+            $batch_ids = $query->posts;
+
+            if ( empty( $batch_ids ) ) {
+                break;
+            }
+
+            $posts = get_posts( array(
+                'post__in'       => $batch_ids,
+                'post_type'      => array( 'page', 'post' ),
+                'post_status'    => 'publish',
+                'orderby'        => 'post__in',
+                'posts_per_page' => count( $batch_ids ),
+            ) );
+
+            foreach ( $posts as $post ) {
+                // Match headings (h2–h4) within the post content.
+                preg_match_all( '/<h[2-4][^>]*>(.*?)<\/h[2-4]>/', $post->post_content, $matches );
+                if ( empty( $matches[1] ) ) {
                     continue;
                 }
-                $faqs[] = array(
-                    'question' => $clean,
-                    'source'   => get_permalink( $post ),
-                );
+
+                foreach ( $matches[1] as $heading ) {
+                    $clean = wp_strip_all_tags( $heading );
+                    if ( empty( $clean ) ) {
+                        continue;
+                    }
+
+                    $faqs[] = array(
+                        'question' => $clean,
+                        'source'   => get_permalink( $post ),
+                    );
+
+                    if ( $max_faqs > 0 && count( $faqs ) >= $max_faqs ) {
+                        $reached_max = true;
+                        break;
+                    }
+                }
+
+                if ( $reached_max ) {
+                    break;
+                }
             }
-        }
+
+            wp_reset_postdata();
+
+            if ( $reached_max ) {
+                break;
+            }
+
+            $paged++;
+        } while ( true );
 
         return $faqs;
     }

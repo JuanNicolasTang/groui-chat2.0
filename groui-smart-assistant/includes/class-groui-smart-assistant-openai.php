@@ -47,6 +47,14 @@ class GROUI_Smart_Assistant_OpenAI {
             return new WP_Error( 'missing_api_key', __( 'Falta la API key de OpenAI.', 'groui-smart-assistant' ) );
         }
 
+        $meta = isset( $context['_meta'] ) && is_array( $context['_meta'] ) ? $context['_meta'] : array();
+
+        if ( ! empty( $meta['pruned'] ) ) {
+            $error_message = __( 'El contexto del sitio se recortó porque excedía los límites de la API. Reduce los topes de páginas o productos, o ajusta tus filtros antes de volver a intentarlo.', 'groui-smart-assistant' );
+
+            return new WP_Error( 'context_pruned', $error_message, $meta );
+        }
+
         $system_prompt = $this->build_system_prompt( $context );
 
         $body = array(
@@ -75,6 +83,8 @@ class GROUI_Smart_Assistant_OpenAI {
          */
         $body = apply_filters( 'groui_smart_assistant_openai_body', $body, $message, $context );
 
+        $timeout = apply_filters( 'groui_smart_assistant_openai_timeout', 30, $context, $message );
+
         $response = wp_remote_post(
             'https://api.openai.com/v1/chat/completions',
             array(
@@ -82,7 +92,7 @@ class GROUI_Smart_Assistant_OpenAI {
                     'Content-Type'  => 'application/json',
                     'Authorization' => 'Bearer ' . $api_key,
                 ),
-                'timeout' => 30,
+                'timeout' => $timeout,
                 'body'    => wp_json_encode( $body ),
             )
         );

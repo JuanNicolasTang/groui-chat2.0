@@ -107,9 +107,8 @@ class GROUI_Smart_Assistant_Admin {
             'groui_smart_assistant_general',
             array(
                 'id'          => 'max_pages',
-                // Inform administrators that 0 means unlimited and values are capped at 1000.  This
-                // clarifies the behaviour of the number field in the UI.
-                'description' => __( 'Límite de páginas para el contexto. Usa 0 para ilimitado (hasta un máximo de 1000).', 'groui-smart-assistant' ),
+                // Inform administrators that 0 allows automatic pruning to kick in when required.
+                'description' => __( 'Número máximo de páginas antes de los filtros automáticos. Usa 0 para permitir que la poda automática reduzca el contexto si la API impone límites.', 'groui-smart-assistant' ),
                 'min'         => 0,
                 'max'         => 1000,
             )
@@ -124,8 +123,8 @@ class GROUI_Smart_Assistant_Admin {
             'groui_smart_assistant_general',
             array(
                 'id'          => 'max_products',
-                // Clarify the behaviour for unlimited values and the cap used to protect memory usage.
-                'description' => __( 'Limita la cantidad de productos que se envían al modelo. Usa 0 para ilimitado (hasta un máximo de 1000).', 'groui-smart-assistant' ),
+                // Clarify the behaviour for unlimited values and the automatic pruning safeguards.
+                'description' => __( 'Cantidad máxima de productos que se enviarán antes de la poda. Usa 0 para dejar que el recorte automático actúe si OpenAI rechaza cargas grandes.', 'groui-smart-assistant' ),
                 'min'         => 0,
                 'max'         => 1000,
             )

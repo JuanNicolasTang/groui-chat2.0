@@ -181,6 +181,27 @@ class GROUI_Smart_Assistant_Frontend {
                 $args['s'] = $query;
             }
             $products = wc_get_products( $args );
+
+            if ( empty( $products ) ) {
+                $fallback_args = array(
+                    'status'  => 'publish',
+                    'limit'   => 10,
+                    'orderby' => 'popularity',
+                );
+
+                /**
+                 * Allow developers to modify the fallback product query.
+                 *
+                 * @since 1.0.0
+                 *
+                 * @param array $fallback_args Default fallback arguments.
+                 * @param array $original_args Original query arguments used before fallback.
+                 * @param string $query Search term provided by the assistant/user.
+                 */
+                $fallback_args = apply_filters( 'groui_smart_assistant_fallback_products_args', $fallback_args, $args, $query );
+
+                $products = wc_get_products( $fallback_args );
+            }
         }
 
         $cards = array();

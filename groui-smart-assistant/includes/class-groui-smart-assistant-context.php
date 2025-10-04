@@ -792,7 +792,7 @@ class GROUI_Smart_Assistant_Context {
         // attribute taxonomies (prefixed with "pa_") and a "brand" taxonomy if
         // available.  This ensures the assistant indexes categories, tags, brands
         // and custom attributes without requiring manual updates.
-        $taxonomies = array( 'product_cat', 'product_tag', 'category' );
+        $taxonomies = array( 'product_cat', 'product_tag', 'category', 'product_brand' );
 
         // Append all attribute taxonomies registered by WooCommerce (these are
         // prefixed with "pa_" and returned by wc_get_attribute_taxonomy_names()).
@@ -805,8 +805,12 @@ class GROUI_Smart_Assistant_Context {
 
         // Include a generic brand taxonomy if it exists (for example,
         // provided by YITH Brands or other branding plugins).
-        if ( taxonomy_exists( 'brand' ) ) {
-            $taxonomies[] = 'brand';
+        $brand_taxonomies = array( 'brand', 'pwb-brand', 'yith_product_brand' );
+
+        foreach ( $brand_taxonomies as $brand_taxonomy ) {
+            if ( taxonomy_exists( $brand_taxonomy ) ) {
+                $taxonomies[] = $brand_taxonomy;
+            }
         }
 
         // Remove any duplicates.

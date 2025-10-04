@@ -157,6 +157,19 @@ class GROUI_Smart_Assistant_Admin {
                 'description' => __( 'Registra información adicional en el log.', 'groui-smart-assistant' ),
             )
         );
+
+        // Custom instructions.
+        add_settings_field(
+            'custom_instructions',
+            __( 'Instrucciones personalizadas', 'groui-smart-assistant' ),
+            array( $this, 'render_textarea_field' ),
+            'groui-smart-assistant',
+            'groui_smart_assistant_general',
+            array(
+                'id'          => 'custom_instructions',
+                'description' => __( 'Define el tono, los temas prioritarios o recordatorios clave para el asistente.', 'groui-smart-assistant' ),
+            )
+        );
     }
 
     /**
@@ -205,8 +218,9 @@ class GROUI_Smart_Assistant_Admin {
             $timeout = 60;
         }
 
-        $sanitized['openai_timeout'] = $timeout;
-        $sanitized['enable_debug']   = ! empty( $settings['enable_debug'] );
+        $sanitized['openai_timeout']      = $timeout;
+        $sanitized['enable_debug']        = ! empty( $settings['enable_debug'] );
+        $sanitized['custom_instructions'] = isset( $settings['custom_instructions'] ) ? sanitize_textarea_field( $settings['custom_instructions'] ) : '';
 
         // Flush cached context whenever settings change.
         delete_transient( GROUI_Smart_Assistant::CONTEXT_TRANSIENT );
@@ -291,6 +305,26 @@ class GROUI_Smart_Assistant_Admin {
     }
 
     /**
+     * Render a textarea field.
+     *
+     * @param array $args Field arguments.
+     * @return void
+     */
+    public function render_textarea_field( $args ) {
+        $options = get_option( GROUI_Smart_Assistant::OPTION_KEY, array() );
+        $value   = isset( $options[ $args['id'] ] ) ? esc_textarea( $options[ $args['id'] ] ) : '';
+        printf(
+            '<textarea class="large-text" rows="5" id="%1$s" name="%2$s[%1$s]">%3$s</textarea>',
+            esc_attr( $args['id'] ),
+            esc_attr( GROUI_Smart_Assistant::OPTION_KEY ),
+            $value
+        );
+        if ( ! empty( $args['description'] ) ) {
+            printf( '<p class="description">%s</p>', esc_html( $args['description'] ) );
+        }
+    }
+
+    /**
      * Render the plugin settings page.
      *
      * @return void
@@ -299,6 +333,7 @@ class GROUI_Smart_Assistant_Admin {
         ?>
         <div class="wrap">
             <h1><?php esc_html_e( 'GROUI Smart Assistant', 'groui-smart-assistant' ); ?></h1>
+            <p class="description"><?php esc_html_e( 'Configura cómo debe comportarse el bot. Puedes incluir pautas concretas como preguntas frecuentes, advertencias legales o recomendaciones específicas para tu tienda.', 'groui-smart-assistant' ); ?></p>
             <form method="post" action="options.php">
                 <?php
                 settings_fields( 'groui-smart-assistant' );

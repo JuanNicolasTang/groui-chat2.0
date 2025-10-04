@@ -59,7 +59,7 @@ class GROUI_Smart_Assistant_OpenAI {
             do_action( 'groui_smart_assistant_context_errors', $errors, $context );
         }
 
-        $system_prompt = $this->build_system_prompt( $context );
+        $system_prompt = $this->build_system_prompt( $context, $settings );
 
         $body = array(
             'model'    => $model,
@@ -163,12 +163,18 @@ class GROUI_Smart_Assistant_OpenAI {
      * explicitly via double quotes instead of escaped strings to improve
      * readability and avoid escaping pitfalls.
      *
-     * @param array $context Context array containing site, pages, faqs, products, categories and sitemap.
+     * @param array $context  Context array containing site, pages, faqs, products, categories and sitemap.
+     * @param array $settings Plugin settings array.
      *
      * @return string Fully composed system prompt.
      */
-    protected function build_system_prompt( $context ) {
+    protected function build_system_prompt( $context, $settings ) {
         $instructions = __( 'Eres GROUI Smart Assistant, una IA entrenada con toda la información de este sitio. Usa los datos proporcionados para responder preguntas, guiar procesos de compra y recomendar productos de WooCommerce. Devuelve siempre una respuesta JSON con las claves "answer" (HTML amigable) y "products" (arreglo opcional de IDs de productos de WooCommerce que quieras resaltar). Cuando no tengas información suficiente, sé honesto.', 'groui-smart-assistant' );
+
+        $custom = '';
+        if ( ! empty( $settings['custom_instructions'] ) ) {
+            $custom = trim( $settings['custom_instructions'] );
+        }
 
         $summary = array(
             'site'       => isset( $context['site'] ) ? $context['site'] : '',
@@ -183,7 +189,13 @@ class GROUI_Smart_Assistant_OpenAI {
         $summary_text = wp_json_encode( $summary );
 
         // Use real newlines within the string to avoid double escaping.
-        return $instructions . "\n\nContexto:\n" . $summary_text;
+        $prompt = $instructions;
+
+        if ( ! empty( $custom ) ) {
+            $prompt .= "\n\n" . $custom;
+        }
+
+        return $prompt . "\n\nContexto:\n" . $summary_text;
     }
 
     /**

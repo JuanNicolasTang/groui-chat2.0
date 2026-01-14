@@ -71,7 +71,7 @@
    */
   function createTemplate() {
     root.innerHTML = `
-      <button type="button" class="gsa-fab" aria-label="Abrir asistente" aria-controls="${widgetId}" data-launcher>
+      <button type="button" class="gsa-fab" aria-label="Abrir asistente de IA" aria-controls="${widgetId}" data-launcher>
         <span class="gsa-fab__glow" aria-hidden="true"></span>
         <span class="gsa-fab__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -81,6 +81,7 @@
             <path d="M12 14.5c.8 0 1.5-.4 2-.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
           </svg>
         </span>
+        <span class="gsa-fab__label">AI</span>
         <span class="gsa-fab__badge gsa-hidden" data-badge>1</span>
       </button>
       <section class="gsa-window" id="${widgetId}" role="dialog" aria-modal="false" aria-hidden="true" aria-label="Asistente virtual" aria-describedby="gsa-dialog-desc">
@@ -328,6 +329,21 @@
   }
 
   /**
+   * Decode HTML entities returned from WooCommerce price formatting.
+   *
+   * @param {string} value
+   * @returns {string}
+   */
+  function decodeHtml(value) {
+    if (!value) {
+      return '';
+    }
+    const textArea = document.createElement('textarea');
+    textArea.innerHTML = value;
+    return textArea.value;
+  }
+
+  /**
    * Display a typing indicator while waiting for a response.  Creates a
    * temporary message element with animated dots.
    */
@@ -421,7 +437,7 @@
         const altText = escapeAttribute(product.name);
         const permalink = escapeAttribute(product.permalink);
         const productName = escapeHtml(product.name);
-        const productPrice = escapeHtml(product.price || '');
+        const productPrice = escapeHtml(decodeHtml(product.price || ''));
         return `
           <article class="gsa-card">
             <img src="${imageSrc}" alt="${altText}" class="gsa-card__img" loading="lazy" />

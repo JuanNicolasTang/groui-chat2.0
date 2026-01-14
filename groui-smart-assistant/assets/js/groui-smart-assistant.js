@@ -84,9 +84,9 @@
         </span>
         <span class="gsa-fab__text">
           <span class="gsa-fab__label">Asistente IA</span>
-          <span class="gsa-fab__sublabel">Resuelve dudas en 1 minuto</span>
         </span>
-        <span class="gsa-fab__tooltip">Asistente IA • Te guía y responde al instante.</span>
+        <span class="gsa-fab__tag" aria-hidden="true">IA</span>
+        <span class="gsa-fab__tooltip">Pregúntame y te ayudo al instante</span>
         <span class="gsa-fab__badge gsa-hidden" data-badge>1</span>
       </button>
       <section class="gsa-window" id="${widgetId}" role="dialog" aria-modal="false" aria-hidden="true" aria-label="Asistente virtual" aria-describedby="gsa-dialog-desc">

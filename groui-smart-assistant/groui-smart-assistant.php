@@ -2,8 +2,8 @@
 /**
  * Plugin Name: GROUI Smart Assistant
  * Description: Floating AI assistant integrated with OpenAI GPT‑5, WooCommerce and the site sitemap for contextual answers and product recommendations. Esta versión incorpora un rediseño visual del asistente (chat más ancho, barra de búsqueda de productos y mejoras de accesibilidad).
- * Version: 2.3.3
- * Author: GROUI TANG EL MEJOR
+ * Version: 3.3.3
+ * Author: TANG EL MEJOR
  * Text Domain: groui-smart-assistant
  * Domain Path: /languages
  *

@@ -47,6 +47,7 @@
     messages: [],
     badge: 0,
     greeted: false,
+    hasUserMessage: false,
   };
 
   // Templates for the send and loading buttons.  These are used to swap
@@ -70,7 +71,7 @@
    */
   function createTemplate() {
     root.innerHTML = `
-      <button type="button" class="gsa-fab" aria-label="Abrir asistente" aria-controls="${widgetId}" data-launcher>
+      <button type="button" class="gsa-fab" aria-label="Abrir asistente de IA" aria-controls="${widgetId}" data-launcher>
         <span class="gsa-fab__glow" aria-hidden="true"></span>
         <span class="gsa-fab__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -80,13 +81,14 @@
             <path d="M12 14.5c.8 0 1.5-.4 2-.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
           </svg>
         </span>
+        <span class="gsa-fab__label">AI</span>
         <span class="gsa-fab__badge gsa-hidden" data-badge>1</span>
       </button>
-      <section class="gsa-window" id="${widgetId}" role="dialog" aria-modal="false" aria-hidden="true" aria-label="Asistente virtual">
+      <section class="gsa-window" id="${widgetId}" role="dialog" aria-modal="false" aria-hidden="true" aria-label="Asistente virtual" aria-describedby="gsa-dialog-desc">
         <header class="gsa-header">
           <div>
             <p class="gsa-title">GROUI Smart Assistant</p>
-            <p class="gsa-subtitle">Tu copiloto para explorar la tienda</p>
+            <p class="gsa-subtitle">Tu copiloto para explorar la tienda y resolver dudas en tiempo real</p>
           </div>
           <div class="gsa-actions">
             <!-- El botón de actualización de productos se elimina. Solo permanece el botón de cierre. -->
@@ -99,9 +101,43 @@
           </div>
         </header>
         <div class="gsa-messages" data-scroll>
+          <div class="gsa-visually-hidden" id="gsa-dialog-desc">
+            Asistente virtual con respuestas y recomendaciones de productos.
+          </div>
+          <section class="gsa-onboarding" data-onboarding>
+            <p class="gsa-onboarding__title">¿En qué puedo ayudarte?</p>
+            <p class="gsa-onboarding__text">Escribe tu pregunta o usa un atajo rápido para empezar.</p>
+            <div class="gsa-onboarding__chips">
+              <button type="button" class="gsa-chip-action" data-prompt="Busco un regalo, ¿qué me recomiendas?">🎁 Ideas de regalo</button>
+              <button type="button" class="gsa-chip-action" data-prompt="¿Cuáles son los productos más populares?">🔥 Más populares</button>
+              <button type="button" class="gsa-chip-action" data-prompt="Quiero algo por menos de $50">💸 Presupuesto</button>
+            </div>
+            <ul class="gsa-onboarding__list">
+              <li>Resuelve dudas sobre envíos, pagos y devoluciones.</li>
+              <li>Encuentra productos según tu presupuesto o categoría.</li>
+              <li>Te guía paso a paso en tu compra.</li>
+            </ul>
+          </section>
           <div class="gsa-messages__list" data-messages aria-live="polite"></div>
           <section class="gsa-products gsa-hidden" data-products-section>
             <!-- Solo se muestra este contenedor cuando hay productos devueltos por la IA. -->
+            <div class="gsa-products__header">
+              <div>
+                <h4>Recomendaciones</h4>
+                <p class="gsa-products__hint">Filtra por marca o categoría si quieres afinar resultados.</p>
+              </div>
+              <div class="gsa-product-search">
+                <input type="search" class="gsa-search-input" placeholder="Buscar productos…" aria-label="Buscar productos" data-product-search />
+                <button type="button" class="gsa-btn gsa-btn--ghost" data-product-refresh>
+                  <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M4 10a6 6 0 0 1 10-4.4M16 10a6 6 0 0 1-10 4.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    <path d="m14 4 2 2-2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    <path d="m6 16-2-2 2-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  </svg>
+                  Actualizar
+                </button>
+              </div>
+            </div>
             <div class="gsa-products__grid" data-products-grid></div>
           </section>
         </div>
@@ -186,8 +222,10 @@
    * @param {string} content The content of the message.
    */
   function pushUserMessage(content) {
+    state.hasUserMessage = true;
     state.messages.push({ role: 'user', content });
     renderMessage({ role: 'user', content });
+    updateOnboardingVisibility();
   }
 
   /**
@@ -240,6 +278,17 @@
   }
 
   /**
+   * Show or hide the onboarding panel based on whether the user has engaged.
+   */
+  function updateOnboardingVisibility() {
+    const onboarding = root.querySelector('[data-onboarding]');
+    if (!onboarding) {
+      return;
+    }
+    onboarding.classList.toggle('gsa-hidden', state.hasUserMessage);
+  }
+
+  /**
    * Pass-through helper for assistant content.  Future processing could
    * sanitize or process Markdown if desired.
    *
@@ -277,6 +326,21 @@
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
+  }
+
+  /**
+   * Decode HTML entities returned from WooCommerce price formatting.
+   *
+   * @param {string} value
+   * @returns {string}
+   */
+  function decodeHtml(value) {
+    if (!value) {
+      return '';
+    }
+    const textArea = document.createElement('textarea');
+    textArea.innerHTML = value;
+    return textArea.value;
   }
 
   /**
@@ -373,7 +437,7 @@
         const altText = escapeAttribute(product.name);
         const permalink = escapeAttribute(product.permalink);
         const productName = escapeHtml(product.name);
-        const productPrice = escapeHtml(product.price || '');
+        const productPrice = escapeHtml(decodeHtml(product.price || ''));
         return `
           <article class="gsa-card">
             <img src="${imageSrc}" alt="${altText}" class="gsa-card__img" loading="lazy" />
@@ -472,6 +536,21 @@
   }
 
   /**
+   * Debounce helper for input events.
+   *
+   * @param {Function} fn
+   * @param {number} wait
+   * @returns {Function}
+   */
+  function debounce(fn, wait) {
+    let timeoutId;
+    return (...args) => {
+      window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => fn(...args), wait);
+    };
+  }
+
+  /**
    * Bind event handlers for user interactions.  Handles opening and closing
    * the panel, refreshing products, searching within products, and
    * submitting the chat form.
@@ -480,6 +559,8 @@
     root.addEventListener('click', (event) => {
       const launcher = root.querySelector('[data-launcher]');
       const closeBtn = root.querySelector('[data-close]');
+      const promptBtn = event.target.closest('[data-prompt]');
+      const refreshBtn = root.querySelector('[data-product-refresh]');
       if (launcher && (event.target === launcher || launcher.contains(event.target))) {
         togglePanel();
         return;
@@ -488,9 +569,27 @@
         togglePanel(false);
         return;
       }
-      // Se eliminan los botones de refresco y búsqueda; ya no se manejan aquí.
+      if (promptBtn) {
+        const prompt = promptBtn.getAttribute('data-prompt');
+        if (prompt) {
+          pushUserMessage(prompt);
+          submitMessage(prompt);
+        }
+        return;
+      }
+      if (refreshBtn && (event.target === refreshBtn || refreshBtn.contains(event.target))) {
+        const searchInput = root.querySelector('[data-product-search]');
+        requestProducts(searchInput ? searchInput.value.trim() : '');
+        return;
+      }
     });
-    // Al no existir barra de búsqueda ni botones de refresco, no se añaden eventos relacionados.
+    const searchInput = root.querySelector('[data-product-search]');
+    if (searchInput) {
+      const handleSearch = debounce(() => {
+        requestProducts(searchInput.value.trim());
+      }, 450);
+      searchInput.addEventListener('input', handleSearch);
+    }
     const form = root.querySelector('[data-form]');
     if (!form) {
       return;
@@ -518,5 +617,5 @@
   createTemplate();
   bindEvents();
   togglePanel(false);
-  // Product recommendations are now opt-in via the search bar or refresh buttons.
+  updateOnboardingVisibility();
 })(jQuery);

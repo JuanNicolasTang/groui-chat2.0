@@ -72,6 +72,7 @@
   function createTemplate() {
     root.innerHTML = `
       <button type="button" class="gsa-fab" aria-label="Abrir asistente de IA" aria-controls="${widgetId}" data-launcher>
+        <span class="gsa-fab__pulse" aria-hidden="true"></span>
         <span class="gsa-fab__glow" aria-hidden="true"></span>
         <span class="gsa-fab__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -81,7 +82,12 @@
             <path d="M12 14.5c.8 0 1.5-.4 2-.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
           </svg>
         </span>
-        <span class="gsa-fab__label">AI</span>
+        <span class="gsa-fab__text">
+          <span class="gsa-fab__label">Asistente IA</span>
+          <span class="gsa-fab__sublabel">Respuestas al instante</span>
+        </span>
+        <span class="gsa-fab__tag" aria-hidden="true">IA</span>
+        <span class="gsa-fab__tooltip" role="tooltip" aria-hidden="true" data-tooltip>Pregúntame y te ayudo al instante.</span>
         <span class="gsa-fab__badge gsa-hidden" data-badge>1</span>
       </button>
       <section class="gsa-window" id="${widgetId}" role="dialog" aria-modal="false" aria-hidden="true" aria-label="Asistente virtual" aria-describedby="gsa-dialog-desc">
@@ -172,6 +178,63 @@
     }
   }
 
+  const HINT_STORAGE_KEY = 'gsa-launcher-hint-shown';
+  let hintTimeoutId = null;
+
+  /**
+   * Toggle the launcher tooltip visibility.
+   *
+   * @param {boolean} isVisible
+   */
+  function setLauncherHintVisible(isVisible) {
+    const tooltip = root.querySelector('[data-tooltip]');
+    if (!tooltip) {
+      return;
+    }
+    tooltip.classList.toggle('is-visible', isVisible);
+    tooltip.setAttribute('aria-hidden', String(!isVisible));
+  }
+
+  /**
+   * Show the launcher hint once per session.
+   */
+  function showLauncherHint() {
+    const tooltip = root.querySelector('[data-tooltip]');
+    if (!tooltip) {
+      return;
+    }
+    let alreadyShown = false;
+    try {
+      alreadyShown = window.sessionStorage.getItem(HINT_STORAGE_KEY) === 'true';
+    } catch (error) {
+      alreadyShown = false;
+    }
+    if (alreadyShown) {
+      return;
+    }
+    setLauncherHintVisible(true);
+    try {
+      window.sessionStorage.setItem(HINT_STORAGE_KEY, 'true');
+    } catch (error) {
+      // If session storage is blocked, we still show once per load.
+    }
+    hintTimeoutId = window.setTimeout(() => {
+      setLauncherHintVisible(false);
+      hintTimeoutId = null;
+    }, 4200);
+  }
+
+  /**
+   * Hide the launcher hint immediately.
+   */
+  function hideLauncherHint() {
+    if (hintTimeoutId) {
+      window.clearTimeout(hintTimeoutId);
+      hintTimeoutId = null;
+    }
+    setLauncherHintVisible(false);
+  }
+
   /**
    * Toggle the open/closed state of the chat window.  Updates ARIA attributes
    * accordingly and resets the badge counter when opened.  Also triggers
@@ -187,8 +250,12 @@
       return;
     }
     panel.classList.toggle('is-open', state.open);
+    launcher.classList.toggle('is-open', state.open);
     panel.setAttribute('aria-hidden', String(!state.open));
     launcher.setAttribute('aria-expanded', String(state.open));
+    if (state.open) {
+      hideLauncherHint();
+    }
     if (state.open) {
       state.badge = 0;
       updateBadge(state.badge);
@@ -562,6 +629,7 @@
       const promptBtn = event.target.closest('[data-prompt]');
       const refreshBtn = root.querySelector('[data-product-refresh]');
       if (launcher && (event.target === launcher || launcher.contains(event.target))) {
+        hideLauncherHint();
         togglePanel();
         return;
       }
@@ -615,6 +683,7 @@
 
   // Initialize the widget once the DOM is ready.
   createTemplate();
+  showLauncherHint();
   bindEvents();
   togglePanel(false);
   updateOnboardingVisibility();

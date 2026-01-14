@@ -420,6 +420,9 @@ class GROUI_Smart_Assistant_Context {
      */
     protected function get_sitemap_summary( $settings ) {
         $sitemap_url = ! empty( $settings['sitemap_url'] ) ? esc_url_raw( $settings['sitemap_url'] ) : home_url( '/sitemap.xml' );
+        if ( ! wp_http_validate_url( $sitemap_url ) ) {
+            return array();
+        }
         $max_urls    = absint( apply_filters( 'groui_smart_assistant_max_sitemap_urls', 500, $settings ) );
         $max_files   = absint( apply_filters( 'groui_smart_assistant_max_sitemap_files', 25, $settings ) );
         $debug       = ! empty( $settings['enable_debug'] );
@@ -494,9 +497,9 @@ class GROUI_Smart_Assistant_Context {
                         break;
                     }
 
-                    $loc = isset( $child->loc ) ? trim( (string) $child->loc ) : '';
+                    $loc = isset( $child->loc ) ? esc_url_raw( trim( (string) $child->loc ) ) : '';
 
-                    if ( empty( $loc ) || isset( $processed[ $loc ] ) ) {
+                    if ( empty( $loc ) || ! wp_http_validate_url( $loc ) || isset( $processed[ $loc ] ) ) {
                         continue;
                     }
 
@@ -512,9 +515,9 @@ class GROUI_Smart_Assistant_Context {
                         break 2;
                     }
 
-                    $loc = isset( $entry->loc ) ? trim( (string) $entry->loc ) : '';
+                    $loc = isset( $entry->loc ) ? esc_url_raw( trim( (string) $entry->loc ) ) : '';
 
-                    if ( empty( $loc ) ) {
+                    if ( empty( $loc ) || ! wp_http_validate_url( $loc ) ) {
                         continue;
                     }
 
@@ -541,8 +544,6 @@ class GROUI_Smart_Assistant_Context {
      * @return array List of page summaries with `title`, `url` and `excerpt` keys.
      */
     protected function get_page_summaries( $limit ) {
-        global $wpdb;
-
         // We'll fetch published pages in chunks to avoid running into timeouts when
         // the site has hundreds or thousands of pages.  When a non‑zero limit is
         // specified, we can rely on WordPress to limit the query natively.  When
@@ -812,7 +813,7 @@ class GROUI_Smart_Assistant_Context {
             'price'        => wp_strip_all_tags( $product->get_price_html() ),
             'price_amount' => $this->get_product_price_amount( $product ),
             'permalink'    => $product->get_permalink(),
-            'image'        => wp_get_attachment_image_url( $product->get_image_id(), 'medium' ),
+            'image'        => $this->get_product_image_url( $product ),
             'short_desc'   => wp_trim_words( wp_strip_all_tags( $product->get_short_description() ), 30 ),
             'categories'   => array_map( 'intval', $product->get_category_ids() ),
         );
@@ -848,6 +849,30 @@ class GROUI_Smart_Assistant_Context {
         }
 
         return (float) $display_price;
+    }
+
+    /**
+     * Retrieve a product image URL with a WooCommerce placeholder fallback.
+     *
+     * @param WC_Product $product Product instance.
+     *
+     * @return string Image URL.
+     */
+    protected function get_product_image_url( WC_Product $product ) {
+        $image_id = $product->get_image_id();
+
+        if ( $image_id ) {
+            $image_url = wp_get_attachment_image_url( $image_id, 'medium' );
+            if ( $image_url ) {
+                return $image_url;
+            }
+        }
+
+        if ( function_exists( 'wc_placeholder_img_src' ) ) {
+            return wc_placeholder_img_src( 'medium' );
+        }
+
+        return '';
     }
 
     /**
@@ -898,16 +923,19 @@ class GROUI_Smart_Assistant_Context {
             if ( is_wp_error( $terms ) || empty( $terms ) ) {
                 continue;
             }
-            $summary[ $taxonomy ] = array_map(
-                static function( $term ) {
-                    return array(
-                        'name'        => $term->name,
-                        'description' => wp_trim_words( $term->description, 25 ),
-                        'url'         => get_term_link( $term ),
-                    );
-                },
-                $terms
-            );
+            $summary[ $taxonomy ] = array();
+            foreach ( $terms as $term ) {
+                $term_link = get_term_link( $term );
+                if ( is_wp_error( $term_link ) ) {
+                    $term_link = '';
+                }
+
+                $summary[ $taxonomy ][] = array(
+                    'name'        => $term->name,
+                    'description' => wp_trim_words( $term->description, 25 ),
+                    'url'         => $term_link,
+                );
+            }
         }
 
         return $summary;

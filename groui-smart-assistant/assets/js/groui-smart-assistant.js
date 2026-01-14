@@ -72,6 +72,7 @@
   function createTemplate() {
     root.innerHTML = `
       <button type="button" class="gsa-fab" aria-label="Abrir asistente de IA" aria-controls="${widgetId}" data-launcher>
+        <span class="gsa-fab__pulse" aria-hidden="true"></span>
         <span class="gsa-fab__glow" aria-hidden="true"></span>
         <span class="gsa-fab__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -81,7 +82,11 @@
             <path d="M12 14.5c.8 0 1.5-.4 2-.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
           </svg>
         </span>
-        <span class="gsa-fab__label">AI</span>
+        <span class="gsa-fab__text">
+          <span class="gsa-fab__label">Asistente IA</span>
+          <span class="gsa-fab__sublabel">Resuelve dudas en 1 minuto</span>
+        </span>
+        <span class="gsa-fab__tooltip">Asistente IA • Te guía y responde al instante.</span>
         <span class="gsa-fab__badge gsa-hidden" data-badge>1</span>
       </button>
       <section class="gsa-window" id="${widgetId}" role="dialog" aria-modal="false" aria-hidden="true" aria-label="Asistente virtual" aria-describedby="gsa-dialog-desc">
@@ -187,6 +192,7 @@
       return;
     }
     panel.classList.toggle('is-open', state.open);
+    launcher.classList.toggle('is-open', state.open);
     panel.setAttribute('aria-hidden', String(!state.open));
     launcher.setAttribute('aria-expanded', String(state.open));
     if (state.open) {
